@@ -832,8 +832,14 @@
               <span><span class="meta-lbl">Progress</span> ${prog.pct}%</span>
             </div>
           </div>
-          <div class="status-badge badge-${p.status}" style="flex-shrink:0">
-            <div class="status-dot" style="background:${color}"></div>${p.badge}
+          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+            <div class="status-badge badge-${p.status}">
+              <div class="status-dot" style="background:${color}"></div>${p.badge}
+            </div>
+            <button class="btn-icon" onclick="deleteProject('${p.id}')" title="Delete project"
+              style="border-color:rgba(255,107,107,0.25);color:var(--hot);"
+              onmouseover="this.style.background='rgba(255,107,107,0.1)'"
+              onmouseout="this.style.background='var(--surface)'">🗑</button>
           </div>
         </div>
         <div class="detail-body">`;
@@ -1034,6 +1040,20 @@
       if (!p) return;
       p.tasks = p.tasks.filter(t => t.id!==taskId);
       saveState(); renderGrid(); renderDetail();
+    }
+
+    function deleteProject(projectId) {
+      const p = getProj(projectId);
+      if (!p) return;
+      const confirmed = window.confirm(
+        `Delete "${p.client} — ${p.project}"?\n\nThis will permanently remove the project and all its tasks. This cannot be undone.`
+      );
+      if (!confirmed) return;
+      STATE = STATE.filter(pr => pr.id !== projectId);
+      saveState();
+      showList();
+      renderStats();
+      renderGrid();
     }
 
     /* ── GANTT ──────────────────────────────────────────────── */
