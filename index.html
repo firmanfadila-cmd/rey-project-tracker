@@ -635,6 +635,7 @@
     let currentView    = 'list';
     let activeProjectId= null;
     let editingTimeline= false;
+    let editingInfo    = false;
     let editingTaskId  = null;
     let showAddForm    = false;
     let activeFilter   = 'all';
@@ -779,6 +780,7 @@
     function showDetail(projectId) {
       activeProjectId  = projectId;
       editingTimeline  = false;
+      editingInfo      = false;
       editingTaskId    = null;
       showAddForm      = false;
       currentView      = 'detail';
@@ -836,6 +838,10 @@
             <div class="status-badge badge-${p.status}">
               <div class="status-dot" style="background:${color}"></div>${p.badge}
             </div>
+            <button class="btn-icon" onclick="toggleInfo()" title="${editingInfo?'Cancel edit':'Edit project info'}"
+              style="${editingInfo?'border-color:var(--accent);color:var(--accent);background:rgba(77,163,255,0.1)':''}">
+              ${editingInfo ? '×' : '✎'}
+            </button>
             <button class="btn-icon" onclick="deleteProject('${p.id}')" title="Delete project"
               style="border-color:rgba(255,107,107,0.25);color:var(--hot);"
               onmouseover="this.style.background='rgba(255,107,107,0.1)'"
@@ -843,6 +849,40 @@
           </div>
         </div>
         <div class="detail-body">`;
+
+      /* ── project info edit form ── */
+      if (editingInfo) {
+        const statusOpts = ['hot','active','poc','v2','done'].map(s =>
+          `<option value="${s}"${p.status===s?' selected':''}>${s.charAt(0).toUpperCase()+s.slice(1)}</option>`).join('');
+        const productOpts = ['Olvo Claims','Olvo UW','Platform','Analytics'].map(s =>
+          `<option value="${s}"${p.product===s?' selected':''}>${s}</option>`).join('');
+        html += `<div class="det-section" style="background:rgba(77,163,255,0.04);border:1px solid rgba(77,163,255,0.12);border-radius:12px;padding:20px 20px 16px;margin-bottom:24px">
+          <div class="det-section-hdr" style="margin-bottom:16px">
+            <div class="det-section-title">Edit Project Info</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div class="tl-field form-full" style="grid-column:1/-1"><label>Project Title</label><input type="text" id="ei-project" class="tf-input" value="${esc(p.project)}" style="width:100%"></div>
+            <div class="tl-field"><label>Client Name</label><input type="text" id="ei-client" class="tf-input" value="${esc(p.client)}" style="width:100%"></div>
+            <div class="tl-field"><label>Sub / Location</label><input type="text" id="ei-sub" class="tf-input" value="${esc(p.sub)}" style="width:100%"></div>
+            <div class="tl-field"><label>Product</label>
+              <select id="ei-product" class="tf-input" style="width:100%">${productOpts}</select>
+            </div>
+            <div class="tl-field"><label>Phase</label><input type="text" id="ei-phase" class="tf-input" value="${esc(p.phase)}" style="width:100%"></div>
+            <div class="tl-field"><label>Status</label>
+              <select id="ei-status" class="tf-input" style="width:100%">${statusOpts}</select>
+            </div>
+            <div class="tl-field"><label>Badge Label</label><input type="text" id="ei-badge" class="tf-input" value="${esc(p.badge)}" style="width:100%"></div>
+            <div class="tl-field"><label>Project Manager</label><input type="text" id="ei-pm" class="tf-input" value="${esc(p.pm||'')}" style="width:100%"></div>
+            <div class="tl-field"><label>Potential Revenue</label><input type="text" id="ei-revenue" class="tf-input" value="${esc(p.revenue||'')}" style="width:100%"></div>
+            <div class="tl-field" style="grid-column:1/-1"><label>Deadline / Date Label</label><input type="text" id="ei-deadline" class="tf-input" value="${esc(p.deadline||'')}" style="width:100%"></div>
+            <div class="tl-field" style="grid-column:1/-1"><label>Next Action</label><input type="text" id="ei-next" class="tf-input" value="${esc(p.next||'')}" style="width:100%"></div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:14px">
+            <button class="btn-ghost" style="padding:6px 14px;font-size:12px" onclick="toggleInfo()">Cancel</button>
+            <button class="btn-primary" style="padding:6px 14px;font-size:12px" onclick="saveInfo()">Save Changes</button>
+          </div>
+        </div>`;
+      }
 
       /* ── timeline section ── */
       html += `<div class="det-section">
@@ -962,6 +1002,33 @@
       p.actualStart = document.getElementById('tl-as')?.value || null;
       p.actualEnd   = document.getElementById('tl-ae')?.value || null;
       editingTimeline = false;
+      saveState(); renderGrid(); renderDetail();
+    }
+
+    /* ── PROJECT INFO EDIT ─────────────────────────────────── */
+    function toggleInfo() { editingInfo = !editingInfo; renderDetail(); }
+
+    function saveInfo() {
+      const p = getProj(activeProjectId);
+      if (!p) return;
+      const project = document.getElementById('ei-project')?.value.trim();
+      const client  = document.getElementById('ei-client')?.value.trim();
+      if (!project || !client) { alert('Project title and client name are required.'); return; }
+      p.project  = project;
+      p.client   = client;
+      p.sub      = document.getElementById('ei-sub')?.value.trim()      || p.sub;
+      p.product  = document.getElementById('ei-product')?.value         || p.product;
+      p.phase    = document.getElementById('ei-phase')?.value.trim()    || p.phase;
+      p.status   = document.getElementById('ei-status')?.value          || p.status;
+      p.badge    = document.getElementById('ei-badge')?.value.trim()    || p.badge;
+      p.pm       = document.getElementById('ei-pm')?.value.trim()       || p.pm;
+      p.revenue  = document.getElementById('ei-revenue')?.value.trim()  || p.revenue;
+      p.deadline = document.getElementById('ei-deadline')?.value.trim() || p.deadline;
+      p.next     = document.getElementById('ei-next')?.value.trim()     || p.next;
+      p.urgent   = p.status === 'hot' || p.status === 'v2';
+      const catMap = { 'Olvo Claims':'claims','Olvo UW':'uw','Platform':'platform','Analytics':'other' };
+      p.category = catMap[p.product] || p.category;
+      editingInfo = false;
       saveState(); renderGrid(); renderDetail();
     }
 
