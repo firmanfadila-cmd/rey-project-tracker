@@ -503,7 +503,7 @@
       'on-hold':     { label:'On Hold',     color:'#ffd166',  bg:'rgba(255,209,102,0.14)'},
     };
     const TAG_CLASS = { 'Olvo Claims':'tag-claims','Olvo UW':'tag-uw','Platform':'tag-platform' };
-    const LS_KEY    = 'rey_projects_v3';
+    const LS_KEY    = 'rey_projects_v4';
 
     /* ── SEED DATA ──────────────────────────────────────────── */
     const SEED = [
@@ -566,15 +566,19 @@
       {
         id:'prudential-id', client:'Prudential Indonesia', sub:'Indonesia (Claim Automation)',
         mono:'PRU', monoColor:'#6a1b9a', project:'Claim Automation (OCR + AI)',
-        product:'Olvo Claims', category:'claims', status:'hot', badge:'MOM Due', phase:'Post-Workshop 1',
-        deadline:'MOM: 10 Jun · WS2: 12 Jun (tentative)', urgent:true, pm:'Firman Fadila', revenue:'IDR 3B',
-        next:'Send MOM to Pru by 10 Jun · Workshop 2 tentative Thu 12 Jun · MVP1 live Sep 2026',
+        product:'Olvo Claims', category:'claims', status:'active', badge:'Awaiting Data', phase:'Waiting Pru Requirements',
+        deadline:'Data req: 12 Jun · WS2: 19 Jun 2026', urgent:false, pm:'Firman Fadila', revenue:'IDR 3B',
+        next:'Prudential to submit 12 requirement items by 12 Jun → Rey defines data setup 18 Jun → WS2 19 Jun',
         planStart:'2026-03-01', planEnd:'2026-09-30', actualStart:'2026-04-01', actualEnd:null,
         tasks:[
-          {id:'t-pru-1',name:'Workshop 1',planStart:'2026-06-01',planEnd:'2026-06-09',actualStart:'2026-06-09',actualEnd:'2026-06-09',progress:100,status:'completed',remarks:'Scope aligned: Final Billing + SKD & Invoice. FWA deferred.'},
-          {id:'t-pru-2',name:'Send MOM',planStart:'2026-06-10',planEnd:'2026-06-10',actualStart:null,actualEnd:null,progress:0,status:'not-started',remarks:'Due: 10 June 2026'},
-          {id:'t-pru-3',name:'Workshop 2',planStart:'2026-06-12',planEnd:'2026-06-12',actualStart:null,actualEnd:null,progress:0,status:'not-started',remarks:'Tentative Thursday 12 June'},
-          {id:'t-pru-4',name:'MVP1 Dev & Testing',planStart:'2026-06-15',planEnd:'2026-09-15',actualStart:null,actualEnd:null,progress:0,status:'not-started',remarks:'Live target: September 2026'},
+          {id:'t-pru-1',name:'Workshop 1',planStart:'2026-06-01',planEnd:'2026-06-09',actualStart:'2026-06-09',actualEnd:'2026-06-09',progress:100,status:'completed',remarks:'Scope aligned: Final Billing + SKD & Invoice. FWA & Claim Summary deferred to next phase.'},
+          {id:'t-pru-2',name:'Send MOM',planStart:'2026-06-10',planEnd:'2026-06-10',actualStart:'2026-06-10',actualEnd:'2026-06-10',progress:100,status:'completed',remarks:'MOM sent to Raymond Wibowo (Prudential) by Pelangi on 10 Jun 2026'},
+          {id:'t-pru-loi',name:'LOI Document',planStart:'2026-06-12',planEnd:'2026-06-12',actualStart:null,actualEnd:null,progress:0,status:'in-progress',remarks:'On process — target 12 Jun 2026'},
+          {id:'t-pru-3',name:'Gather Data Requirements (by Pru)',planStart:'2026-06-12',planEnd:'2026-06-12',actualStart:null,actualEnd:null,progress:0,status:'on-hold',remarks:'12 items pending: 500 sample docs, JSON schema, API docs, master data, ICD-10, procedure codes, tariff book, NCI'},
+          {id:'t-pru-ds',name:'Define Data Set-Up (by Rey)',planStart:'2026-06-18',planEnd:'2026-06-18',actualStart:null,actualEnd:null,progress:0,status:'not-started',remarks:'Rey to define after receiving Pru data'},
+          {id:'t-pru-ws2',name:'Workshop 2 (Technical)',planStart:'2026-06-19',planEnd:'2026-06-19',actualStart:null,actualEnd:null,progress:0,status:'not-started',remarks:'API & integration deep dive'},
+          {id:'t-pru-su',name:'Start Daily Stand-up',planStart:'2026-06-22',planEnd:'2026-06-22',actualStart:null,actualEnd:null,progress:0,status:'not-started',remarks:''},
+          {id:'t-pru-4',name:'MVP1 Dev & Testing',planStart:'2026-06-22',planEnd:'2026-09-15',actualStart:null,actualEnd:null,progress:0,status:'not-started',remarks:'Live target: September 2026'},
         ],
       },
       {
