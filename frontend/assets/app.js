@@ -14,16 +14,22 @@ function logout() {
 }
 
 async function api(method, path, body) {
-  const res = await fetch('/api' + path, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + getToken(),
-    },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-  if (res.status === 401) { logout(); return null; }
-  return res.json();
+  try {
+    const res = await fetch('/api' + path, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + getToken(),
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    if (res.status === 401) { logout(); return null; }
+    const text = await res.text();
+    try { return JSON.parse(text); } catch { return { data: null, error: `Server error (${res.status})` }; }
+  } catch (err) {
+    console.error('api()', method, path, err);
+    return { data: null, error: 'Network error — check connection' };
+  }
 }
 
 /* ── CONSTANTS ──────────────────────────────────────────── */
@@ -112,8 +118,9 @@ function projProgress(p) {
 /* ── DATA LOADING ───────────────────────────────────────── */
 async function loadProjects() {
   const json = await api('GET', '/projects');
-  if (!json || json.error) return;
-  STATE = json.data.map(normalizeProject);
+  if (!json) return;
+  if (json.error) throw new Error(json.error);
+  STATE = (json.data || []).map(normalizeProject);
 }
 
 async function loadTasksForProject(projectId) {
@@ -755,7 +762,13 @@ document.addEventListener('keydown', e => {
 
   document.getElementById('grid').innerHTML = `<div class="loading-wrap" style="grid-column:1/-1"><div class="loading-spinner"></div></div>`;
 
-  await loadProjects();
+  try {
+    await loadProjects();
+  } catch (err) {
+    console.error('loadProjects failed:', err);
+    document.getElementById('grid').innerHTML = `<div class="loading-wrap" style="grid-column:1/-1;color:#ff6b6b;font-size:13px">Failed to load projects — ${err.message || 'check connection'}</div>`;
+    return;
+  }
   renderStats();
   renderGrid();
 })();
