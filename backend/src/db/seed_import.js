@@ -7,7 +7,7 @@
  *   2. Paste into a file: data/projects.json
  *   3. Run: node backend/src/db/seed_import.js
  */
-require('dotenv').config({ path: require('path').join(__dirname, '../../../.env') });
+require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
 const fs   = require('fs');
 const path = require('path');
 const pool = require('./pool');
