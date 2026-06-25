@@ -5,8 +5,10 @@ const bcrypt = require('bcrypt');
 const pool   = require('./pool');
 
 async function migrate() {
-  const sql = fs.readFileSync(path.join(__dirname, 'migrations/001_init.sql'), 'utf8');
-  await pool.query(sql);
+  const sql1 = fs.readFileSync(path.join(__dirname, 'migrations/001_init.sql'), 'utf8');
+  await pool.query(sql1);
+  const sql2 = fs.readFileSync(path.join(__dirname, 'migrations/002_add_badge_deadline.sql'), 'utf8');
+  await pool.query(sql2);
   console.log('Schema migrated.');
 
   const hash = await bcrypt.hash('Admin@Rey2026', 10);

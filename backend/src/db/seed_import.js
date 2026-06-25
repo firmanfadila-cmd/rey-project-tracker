@@ -12,7 +12,7 @@ const fs   = require('fs');
 const path = require('path');
 const pool = require('./pool');
 
-const FILE = path.join(__dirname, '../../../../data/projects.json');
+const FILE = path.join(__dirname, '../../../data/projects.json');
 
 async function run() {
   if (!fs.existsSync(FILE)) {

@@ -2,6 +2,11 @@ require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 const express = require('express');
 const path    = require('path');
 
+if (!process.env.JWT_SECRET) {
+  process.env.JWT_SECRET = 'rey-default-secret-please-set-JWT_SECRET-env-var';
+  console.warn('WARNING: JWT_SECRET not set — using insecure default. Set it in Railway Variables.');
+}
+
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
