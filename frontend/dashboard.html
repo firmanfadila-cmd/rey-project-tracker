@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="REY Project Tracker — PT Vertika Technologies Nusantara business development portfolio dashboard.">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#090f18">
+  <title>REY — Project Tracker</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231a6eb5'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-weight='700' font-size='12' fill='white'%3EREY%3C/text%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+  <noscript>
+    <div style="font-family:sans-serif;padding:40px;text-align:center;background:#090f18;color:#dde8f5;min-height:100vh;display:flex;align-items:center;justify-content:center">
+      <div><strong>JavaScript is required</strong><br><br>REY Project Tracker requires JavaScript. Please enable JavaScript in your browser.</div>
+    </div>
+  </noscript>
+
+  <!-- SHARED HEADER -->
+  <header class="header">
+    <div class="brand">
+      <div class="logo">REY</div>
+      <div>
+        <div class="brand-title">Project Tracker</div>
+        <div class="brand-sub">PT Vertika Technologies Nusantara — Active Portfolio</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="header-actions">
+        <button class="btn-new-project" onclick="openProjectModal()">+ New Project</button>
+        <button class="btn-logout" onclick="logout()">Sign out</button>
+      </div>
+      <div class="header-date" id="live-date">—</div>
+      <div class="header-sync" id="header-sync">—</div>
+    </div>
+  </header>
+
+  <!-- LIST VIEW -->
+  <div id="view-list">
+    <div class="stats-bar" id="stats-bar"></div>
+    <div class="filters">
+      <button class="filter-btn active" data-filter="all">All Projects</button>
+      <button class="filter-btn" data-filter="claims">Olvo Claims</button>
+      <button class="filter-btn" data-filter="uw">Olvo UW</button>
+      <button class="filter-btn" data-filter="platform">Platform</button>
+      <button class="filter-btn" data-filter="done">Completed</button>
+    </div>
+    <div class="grid-wrap">
+      <div class="grid" id="grid">
+        <div class="no-results" id="no-results">No projects match this filter.</div>
+      </div>
+    </div>
+    <footer class="footer">
+      <div class="footer-text">REY.ID — VP Business Growth Dashboard</div>
+      <div class="footer-right">firman.fadila@rey.id</div>
+    </footer>
+  </div>
+
+  <!-- DETAIL VIEW -->
+  <div id="view-detail"></div>
+
+  <!-- NEW PROJECT MODAL -->
+  <div id="project-modal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">New Project</div>
+        <button class="btn-icon" onclick="closeProjectModal()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="form-field form-full"><label>Client Name *</label><input type="text" id="pf-client" placeholder="e.g. Asuransi XYZ"></div>
+          <div class="form-field form-full"><label>Sub / Location / Team</label><input type="text" id="pf-sub" placeholder="e.g. Indonesia"></div>
+          <div class="form-field form-full"><label>Project Title *</label><input type="text" id="pf-project" placeholder="e.g. Claim Automation (OCR + AI)"></div>
+          <div class="form-field"><label>Product Line</label>
+            <select id="pf-product">
+              <option value="Olvo Claims">Olvo Claims</option>
+              <option value="Olvo UW">Olvo UW</option>
+              <option value="Platform">Platform</option>
+              <option value="Analytics">Analytics</option>
+            </select>
+          </div>
+          <div class="form-field"><label>Status</label>
+            <select id="pf-status">
+              <option value="active">Active</option>
+              <option value="hot">Hot / Urgent</option>
+              <option value="poc">POC</option>
+              <option value="v2">V2 Dev</option>
+            </select>
+          </div>
+          <div class="form-field"><label>Project Manager</label><input type="text" id="pf-pm" placeholder="e.g. Firman Fadila"></div>
+          <div class="form-field"><label>Potential Revenue</label><input type="text" id="pf-revenue" placeholder="e.g. IDR 2.5B"></div>
+          <div class="form-sep"></div>
+          <div class="form-lbl-section">Project Dates</div>
+          <div class="form-field"><label>Plan Start *</label><input type="date" id="pf-plan-start"></div>
+          <div class="form-field"><label>Plan End *</label><input type="date" id="pf-plan-end"></div>
+          <div class="form-field"><label>Actual Start</label><input type="date" id="pf-actual-start"></div>
+          <div class="form-field"><label>Actual End</label><input type="date" id="pf-actual-end"></div>
+          <div class="form-sep"></div>
+          <div class="form-lbl-section">Additional Info</div>
+          <div class="form-field form-full"><label>Next Action</label><input type="text" id="pf-next" placeholder="e.g. Send proposal to client"></div>
+          <div class="form-field form-full"><label>Remarks / Notes</label><textarea id="pf-remarks" placeholder="Any context or notes..."></textarea></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-ghost" onclick="closeProjectModal()">Cancel</button>
+        <button class="btn-primary" onclick="submitNewProject()">Create Project</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/assets/app.js"></script>
+</body>
+</html>
