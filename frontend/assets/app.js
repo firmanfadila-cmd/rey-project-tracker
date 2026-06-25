@@ -153,7 +153,7 @@ function renderGrid() {
   const grid = document.getElementById('grid');
   const noR  = document.getElementById('no-results');
   if (!grid) return;
-  grid.querySelectorAll('.card').forEach(c => c.remove());
+  grid.querySelectorAll('.card, .loading-wrap').forEach(c => c.remove());
 
   STATE.forEach((p, i) => {
     const prog   = projProgress(p);
