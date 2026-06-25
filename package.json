@@ -1,0 +1,11 @@
+{
+  "name": "rey-project-tracker",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node backend/src/index.js",
+    "postinstall": "npm install --prefix backend"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
