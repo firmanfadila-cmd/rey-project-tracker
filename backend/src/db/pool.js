@@ -1,5 +1,10 @@
 require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
+
+// Keep DATE columns as raw 'YYYY-MM-DD' strings — the default pg parser
+// converts them to JS Date objects at local midnight, which both shifts
+// the date across timezones and breaks the frontend's `d+'T00:00:00'` parsing.
+types.setTypeParser(1082, val => val);
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
