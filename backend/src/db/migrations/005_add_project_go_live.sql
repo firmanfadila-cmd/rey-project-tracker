@@ -1,0 +1,2 @@
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS is_live      BOOLEAN DEFAULT false;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS go_live_date DATE;

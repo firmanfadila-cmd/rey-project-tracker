@@ -13,9 +13,11 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../../frontend')));
 
-app.use('/api/auth',     require('./routes/auth'));
-app.use('/api/projects', require('./routes/projects'));
-app.use('/api/tasks',    require('./routes/tasks'));
+app.use('/api/auth',        require('./routes/auth'));
+app.use('/api/projects',    require('./routes/projects'));
+app.use('/api/tasks',       require('./routes/tasks'));
+app.use('/api/attachments', require('./routes/attachments'));
+app.use('/api/revenue',     require('./routes/revenue'));
 
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../../frontend/index.html'));
