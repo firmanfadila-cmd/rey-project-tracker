@@ -33,7 +33,7 @@ async function api(method, path, body) {
 }
 
 /* ── CONSTANTS ──────────────────────────────────────────── */
-const STATUS_COLOR = { hot:'#ff6b6b', active:'#4da3ff', poc:'#ffd166', v2:'#b594f8', done:'#2dd4a7' };
+const STATUS_COLOR = { hot:'#f5730c', active:'#4da3ff', poc:'#ffd166', v2:'#b594f8', done:'#2dd4a7' };
 const TASK_STATUS = {
   'not-started': { label:'Not Started', color:'#3f607e',  bg:'rgba(63,96,126,0.22)'  },
   'in-progress': { label:'In Progress', color:'#4da3ff',  bg:'rgba(77,163,255,0.14)' },
@@ -51,9 +51,11 @@ let currentView    = 'list';
 let activeProjectId= null;
 let editingTimeline= false;
 let editingInfo    = false;
-let editingTaskId  = null;
-let showAddForm    = false;
-let activeFilter   = 'all';
+let openTaskId          = null;  // task id shown in the task card modal; 'new' = creating a top-level task; null = closed
+let cardAddingSubtask   = false; // inline "add subtask" mini-form open within the current card
+let revenueModalOpen    = false;
+let revenueEntryEditing = null;  // the revenue row being edited, or null when adding a new month
+let activeFilter        = 'all';
 
 /* ── HELPERS ────────────────────────────────────────────── */
 function getProj(id) { return STATE.find(p => p.id === id); }
@@ -72,6 +74,8 @@ function normalizeProject(row) {
     category:    CAT_MAP[product] || 'other',
     badge:       row.badge || badgeMap[status] || 'Active',
     urgent:      status === 'hot' || status === 'v2',
+    isLive:      !!row.is_live,
+    goLiveDate:  row.go_live_date || null,
     tasks:       row.tasks || [],
   };
 }
@@ -86,7 +90,32 @@ function normalizeTask(row) {
     progress:    row.progress     || 0,
     status:      row.status       || 'not-started',
     remarks:     row.remarks      || '',
+    parentId:    row.parent_id    || null,
   };
+}
+
+// Tasks are named "1. ...", "2. ..." etc — sort on that leading number
+// so the list follows the plan's natural order, not insertion order.
+// Unnumbered tasks fall back to creation order, after numbered ones.
+function taskOrderKey(t) {
+  const m = /^(\d+)\./.exec(t.name || '');
+  return m ? parseInt(m[1], 10) : Infinity;
+}
+function byTaskOrder(a, b) {
+  return taskOrderKey(a) - taskOrderKey(b) || (a.created_at||'').localeCompare(b.created_at||'');
+}
+function topLevelOf(tasks)         { return tasks.filter(t => !t.parentId).sort(byTaskOrder); }
+function childrenOf(tasks, parentId) { return tasks.filter(t => t.parentId === parentId).sort(byTaskOrder); }
+
+// Top-level tasks followed immediately by their subtasks, in order —
+// keeps the table and Gantt chart in the same visual order.
+function orderedTasks(tasks) {
+  const out = [];
+  topLevelOf(tasks).forEach(t => {
+    out.push(t);
+    childrenOf(tasks, t.id).forEach(c => out.push(c));
+  });
+  return out;
 }
 
 function daysFrom(base, d) {
@@ -106,13 +135,52 @@ function fmtFull(s) {
   return new Date(s+'T00:00:00').toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
 }
 function todayISO() { return new Date().toISOString().slice(0,10); }
+
+function fmtIDR(n) {
+  if (n === null || n === undefined || n === '') return null;
+  return 'IDR ' + Math.round(Number(n)).toLocaleString('id-ID');
+}
+
+// Compares how far along the plan SHOULD be by today (elapsed / total plan
+// days) against actual task progress — not just "days elapsed" vs "total
+// plan duration", which always reads as falsely "ahead" for any project
+// still short of its plan end date.
+function scheduleHealth(p, prog, today) {
+  if (p.actualEnd) {
+    const planD = daysSpan(p.planStart, p.planEnd);
+    const actD  = daysSpan(p.actualStart, p.actualEnd);
+    if (!planD || !actD) return null;
+    const diff = actD - planD;
+    if (diff > 0) return { tone:'delayed', label:`Delivered ${diff}d late` };
+    if (diff < 0) return { tone:'ontrack', label:`Delivered ${Math.abs(diff)}d early` };
+    return { tone:'ontrack', label:'Delivered on time' };
+  }
+  if (!p.planStart || !p.planEnd) return null;
+  const totalDays = daysSpan(p.planStart, p.planEnd);
+  if (!totalDays) return null;
+
+  if (today > p.planEnd) {
+    const daysOver = daysFrom(p.planEnd, today);
+    return { tone:'delayed', label:`Delayed · ${daysOver}d past deadline` };
+  }
+  const elapsedDays = Math.max(0, Math.min(totalDays, daysFrom(p.planStart, today) + 1));
+  const expectedPct = Math.round((elapsedDays/totalDays) * 100);
+  const gap = expectedPct - prog.pct;
+
+  if (gap >= 20) return { tone:'delayed', label:`Delayed · ${gap}% behind plan` };
+  if (gap >= 10) return { tone:'slight',  label:`Slight Delay · ${gap}% behind plan` };
+  return { tone:'ontrack', label:'On Track' };
+}
 function esc(s)     { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 function projProgress(p) {
-  if (!p.tasks || !p.tasks.length) return { pct:0, done:0, total:0 };
-  const pct  = Math.round(p.tasks.reduce((s,t) => s+(t.progress||0), 0) / p.tasks.length);
-  const done = p.tasks.filter(t => t.status==='completed').length;
-  return { pct, done, total:p.tasks.length };
+  // Only top-level tasks count toward the card's rollup — a phase's
+  // subtasks are detail underneath it, not additional weight.
+  const top = (p.tasks || []).filter(t => !t.parentId);
+  if (!top.length) return { pct:0, done:0, total:0 };
+  const pct  = Math.round(top.reduce((s,t) => s+(t.progress||0), 0) / top.length);
+  const done = top.filter(t => t.status==='completed').length;
+  return { pct, done, total:top.length };
 }
 
 /* ── DATA LOADING ───────────────────────────────────────── */
@@ -129,6 +197,11 @@ async function loadTasksForProject(projectId) {
   return json.data.map(normalizeTask);
 }
 
+async function loadRevenue(projectId) {
+  const json = await api('GET', `/revenue/projects/${projectId}`);
+  return (json && !json.error) ? json.data : [];
+}
+
 /* ── STATS BAR ──────────────────────────────────────────── */
 function renderStats() {
   const bar = document.getElementById('stats-bar');
@@ -138,8 +211,9 @@ function renderStats() {
     { color:'#4da3ff', num:STATE.filter(p=>p.status!=='done').length,                lbl:'Active Projects' },
     { color:'#4da3ff', num:STATE.filter(p=>p.category==='claims').length,             lbl:'Olvo Claims' },
     { color:'#b594f8', num:STATE.filter(p=>p.category==='uw').length,                 lbl:'Olvo UW' },
-    { color:'#ff6b6b', num:STATE.filter(p=>p.status==='hot'||p.status==='v2').length, lbl:'Urgent' },
+    { color:'#f5730c', num:STATE.filter(p=>p.status==='hot'||p.status==='v2').length, lbl:'Urgent' },
     { color:'#2dd4a7', num:STATE.filter(p=>p.status==='done').length,                 lbl:'Completed' },
+    { color:'#2dd4a7', num:STATE.filter(p=>p.isLive).length,                          lbl:'Live' },
   ].forEach(s => {
     const el = document.createElement('div');
     el.className = 'stat-pill';
@@ -165,6 +239,7 @@ function renderGrid() {
     card.className = 'card';
     card.dataset.status   = p.status;
     card.dataset.category = p.category;
+    card.dataset.live     = p.isLive ? 'true' : 'false';
     card.style.animationDelay = `${0.05 + i * 0.05}s`;
 
     card.innerHTML = `
@@ -173,8 +248,11 @@ function renderGrid() {
           <div class="monogram" style="background:${p.monoColor}">${esc(p.mono||'?')}</div>
           <div><div class="client-name">${esc(p.client)}</div><div class="client-sub">${esc(p.sub||'')}</div></div>
         </div>
-        <div class="status-badge badge-${p.status}">
-          <div class="status-dot" style="background:${color}"></div>${esc(p.badge)}
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+          ${p.isLive ? `<span class="live-chip">🟢 LIVE</span>` : ''}
+          <div class="status-badge badge-${p.status}">
+            <div class="status-dot" style="background:${color}"></div>${esc(p.badge)}
+          </div>
         </div>
       </div>
       <div class="card-project">${esc(p.project)}</div>
@@ -216,7 +294,7 @@ function applyFilter(f) {
   document.querySelectorAll('.card').forEach(card => {
     const show = f==='all' ? true : f==='claims' ? card.dataset.category==='claims'
       : f==='uw' ? card.dataset.category==='uw' : f==='platform' ? card.dataset.category==='platform'
-      : f==='done' ? card.dataset.status==='done' : false;
+      : f==='done' ? card.dataset.status==='done' : f==='live' ? card.dataset.live==='true' : false;
     card.classList.toggle('hidden', !show);
     if (show) vis++;
   });
@@ -225,11 +303,13 @@ function applyFilter(f) {
 
 /* ── VIEW SWITCHING ─────────────────────────────────────── */
 async function showDetail(projectId) {
-  activeProjectId  = projectId;
-  editingTimeline  = false;
-  editingInfo      = false;
-  editingTaskId    = null;
-  showAddForm      = false;
+  activeProjectId   = projectId;
+  editingTimeline   = false;
+  editingInfo       = false;
+  openTaskId        = null;
+  cardAddingSubtask = false;
+  revenueModalOpen  = false;
+  revenueEntryEditing = null;
   currentView      = 'detail';
   document.getElementById('view-list').style.display   = 'none';
   document.getElementById('view-detail').style.display = 'block';
@@ -239,7 +319,13 @@ async function showDetail(projectId) {
     p.tasks = await loadTasksForProject(projectId);
     p._tasksLoaded = true;
   }
+  if (p && !p._revenueLoaded) {
+    p.revenueEntries = await loadRevenue(projectId);
+    p._revenueLoaded = true;
+  }
   renderDetail();
+  renderTaskCardModal();
+  renderRevenueModal();
   window.scrollTo(0, 0);
 }
 
@@ -266,11 +352,12 @@ function buildDetail(p) {
 
   const planD    = daysSpan(p.planStart, p.planEnd);
   const actD     = p.actualStart ? daysSpan(p.actualStart, p.actualEnd || today) : null;
-  const variance = (planD && actD) ? actD - planD : null;
+  const variance = (p.actualEnd && planD && actD) ? actD - planD : null;
   const varBadge = variance===null ? ''
     : variance>0  ? `<span class="var-badge var-over">+${variance}d over</span>`
-    : variance<0  ? `<span class="var-badge var-under">${Math.abs(variance)}d ahead</span>`
+    : variance<0  ? `<span class="var-badge var-under">${Math.abs(variance)}d early</span>`
     :                `<span class="var-badge var-on">On track</span>`;
+  const health = scheduleHealth(p, prog, today);
 
   let html = `
     <div class="detail-header">
@@ -287,6 +374,9 @@ function buildDetail(p) {
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+        ${p.isLive
+          ? `<button class="live-chip" style="cursor:pointer;border:1px solid rgba(45,212,167,0.3)" onclick="toggleGoLive()" title="Click to revert live status">🟢 LIVE · ${fmtFull(p.goLiveDate)}</button>`
+          : `<button class="btn-ghost" style="padding:5px 12px;font-size:11px" onclick="toggleGoLive()">Mark as Go Live</button>`}
         <div class="status-badge badge-${p.status}">
           <div class="status-dot" style="background:${color}"></div>${esc(p.badge)}
         </div>
@@ -363,67 +453,83 @@ function buildDetail(p) {
   html += `</div>`;
 
   html += `<div class="det-section">
-    <div class="det-section-hdr"><div class="det-section-title">Tasks (${tasks.length})</div></div>`;
+    <div class="det-section-hdr"><div class="det-section-title">Project Health</div></div>
+    <div class="timeline-grid">
+      <div class="timeline-chip">
+        <div class="tc-lbl">Schedule Status</div>
+        <div class="tc-dates" style="color:${health ? {ontrack:'#2dd4a7',slight:'#ffd166',delayed:'#ff6b6b'}[health.tone] : 'var(--text-2)'}">
+          ${health ? (health.tone==='ontrack' ? '✅ ' : '⚠️ ') + health.label : '—'}
+        </div>
+        <div class="tc-days">Based on plan progress vs. task completion</div>
+      </div>
+      <div class="timeline-chip">
+        <div class="tc-lbl">Potential Revenue</div>
+        <div class="tc-dates">${esc(p.revenue || '—')}</div>
+        <div class="tc-days">Set via "Edit Project Info"</div>
+      </div>
+    </div>
+  </div>`;
 
-  if (tasks.length > 0 || (showAddForm && editingTaskId===null)) {
+  html += p.isLive ? buildRevenueSection(p) : buildRevenueLockedSection();
+
+  const topLevel = topLevelOf(tasks);
+  const subCount = tasks.length - topLevel.length;
+
+  html += `<div class="det-section">
+    <div class="det-section-hdr"><div class="det-section-title">Tasks (${topLevel.length}${subCount ? ' + '+subCount+' subtasks' : ''})</div></div>`;
+
+  if (tasks.length > 0) {
     html += `<div class="task-table-scroll"><table class="task-table">
       <thead><tr>
         <th>Task</th>
         <th>Plan Start</th><th>Plan End</th><th>Plan Days</th>
         <th>Actual Start</th><th>Actual End</th><th>Actual Days</th>
-        <th>Progress</th><th>Status</th><th>Remarks</th>
+        <th>Progress</th><th>Status</th>
         <th></th>
       </tr></thead><tbody>`;
 
-    tasks.forEach(t => {
-      if (editingTaskId===t.id) {
-        html += taskFormRow(t, false);
-      } else {
-        const pd = daysSpan(t.planStart, t.planEnd);
-        const ad = t.actualStart ? daysSpan(t.actualStart, t.actualEnd||today) : null;
-        const ts = TASK_STATUS[t.status] || TASK_STATUS['not-started'];
-        html += `<tr>
-          <td><span class="task-name-cell" title="${esc(t.name)}">${esc(t.name)}</span></td>
-          <td>${fmtShort(t.planStart)}</td><td>${fmtShort(t.planEnd)}</td><td>${pd||'—'}</td>
-          <td>${fmtShort(t.actualStart)}</td><td>${fmtShort(t.actualEnd)}</td><td>${ad||'—'}</td>
-          <td>
-            <div class="t-prog-wrap">
-              <div class="t-prog-track"><div class="t-prog-fill" style="width:${t.progress}%;background:${color}"></div></div>
-              <span class="t-prog-pct">${t.progress}%</span>
-            </div>
-          </td>
-          <td><span class="ts-badge" style="background:${ts.bg};color:${ts.color}">${ts.label}</span></td>
-          <td><span class="t-remarks" title="${esc(t.remarks||'')}">${esc(t.remarks||'—')}</span></td>
-          <td>
-            <div class="t-actions">
-              <button class="t-btn" onclick="startEdit('${t.id}')" title="Edit">✎</button>
-              <button class="t-btn del" onclick="deleteTask('${t.id}')" title="Delete">×</button>
-            </div>
-          </td>
-        </tr>`;
-      }
+    topLevel.forEach(t => {
+      html += taskRow(t, color, today, false);
+      childrenOf(tasks, t.id).forEach(st => { html += taskRow(st, color, today, true); });
     });
 
-    if (showAddForm && editingTaskId===null) html += taskFormRow(null, true);
     html += `</tbody></table></div>`;
   } else {
     html += `<div class="task-empty">No tasks yet. Add your first task below.</div>`;
   }
 
-  if (!showAddForm && editingTaskId===null) {
-    html += `<button class="btn-add-task" onclick="openAddForm()">+ Add Task</button>`;
-  }
+  html += `<button class="btn-add-task" onclick="openTaskCard('new')">+ Add Task</button>`;
   html += `</div>`;
 
   if (tasks.length > 0) {
     html += `<div class="det-section">
       <div class="det-section-hdr"><div class="det-section-title">Gantt Chart</div></div>
-      ${buildGantt(tasks, color)}
+      ${buildGantt(orderedTasks(tasks), color)}
     </div>`;
   }
 
   html += `</div>`;
   return html;
+}
+
+/* ── TASK ROW (read mode) ───────────────────────────────── */
+function taskRow(t, color, today, isSub) {
+  const pd = daysSpan(t.planStart, t.planEnd);
+  const ad = t.actualStart ? daysSpan(t.actualStart, t.actualEnd||today) : null;
+  const ts = TASK_STATUS[t.status] || TASK_STATUS['not-started'];
+  return `<tr class="task-row-click ${isSub ? 'subtask-row' : ''}" onclick="openTaskCard('${t.id}')">
+    <td><span class="task-name-cell" title="${esc(t.name)}">${isSub ? '<span class="subtask-arrow">↳</span>' : ''}${esc(t.name)}</span></td>
+    <td>${fmtShort(t.planStart)}</td><td>${fmtShort(t.planEnd)}</td><td>${pd||'—'}</td>
+    <td>${fmtShort(t.actualStart)}</td><td>${fmtShort(t.actualEnd)}</td><td>${ad||'—'}</td>
+    <td>
+      <div class="t-prog-wrap">
+        <div class="t-prog-track"><div class="t-prog-fill" style="width:${t.progress}%;background:${color}"></div></div>
+        <span class="t-prog-pct">${t.progress}%</span>
+      </div>
+    </td>
+    <td><span class="ts-badge" style="background:${ts.bg};color:${ts.color}">${ts.label}</span></td>
+    <td class="t-chevron">›</td>
+  </tr>`;
 }
 
 /* ── GANTT ──────────────────────────────────────────────── */
@@ -490,6 +596,144 @@ function buildGantt(tasks, color) {
   </div>`;
 }
 
+/* ── REVENUE TRACKING ───────────────────────────────────── */
+function fmtMonth(m) {
+  if (!m) return '—';
+  return new Date(m+'T00:00:00').toLocaleDateString('en-GB', { month:'short', year:'numeric' });
+}
+
+function buildRevenueLockedSection() {
+  return `<div class="det-section">
+    <div class="det-section-hdr"><div class="det-section-title">Revenue Tracking</div></div>
+    <div class="task-empty">Revenue tracking unlocks once this project is marked as Go Live.</div>
+  </div>`;
+}
+
+function buildRevenueSection(p) {
+  const entries = (p.revenueEntries || []).slice().sort((a,b) => (a.month||'').localeCompare(b.month||''));
+  const totalPotential = entries.reduce((s,e) => s + (Number(e.potential_revenue)||0), 0);
+  const totalActual    = entries.reduce((s,e) => s + (Number(e.actual_revenue)||0), 0);
+  const achievement     = totalPotential > 0 ? Math.round((totalActual/totalPotential)*100) : null;
+
+  let html = `<div class="det-section">
+    <div class="det-section-hdr">
+      <div class="det-section-title">Revenue Tracking (${entries.length} month${entries.length===1?'':'s'})</div>
+    </div>`;
+
+  if (entries.length) {
+    html += `<div style="display:flex;gap:20px;margin-bottom:14px;font-size:12px;color:var(--text-2)">
+      <div>Total Potential: <strong style="color:var(--text-1)">${fmtIDR(totalPotential) || '—'}</strong></div>
+      <div>Total Actual: <strong style="color:var(--done)">${fmtIDR(totalActual) || '—'}</strong></div>
+      ${achievement!==null ? `<div>Achievement: <strong style="color:var(--text-1)">${achievement}%</strong></div>` : ''}
+    </div>
+    <div class="task-table-scroll"><table class="task-table">
+      <thead><tr>
+        <th>Month</th><th>Potential Revenue</th><th>Actual Revenue</th><th>Achievement</th><th></th>
+      </tr></thead><tbody>` +
+      entries.map(e => {
+        const pct = e.potential_revenue > 0 ? Math.round((Number(e.actual_revenue||0)/Number(e.potential_revenue))*100) : null;
+        return `<tr class="task-row-click" onclick="openRevenueModalById('${e.id}')">
+          <td><span class="task-name-cell">${fmtMonth(e.month)}</span></td>
+          <td>${fmtIDR(e.potential_revenue) || '—'}</td>
+          <td>${fmtIDR(e.actual_revenue) || '—'}</td>
+          <td>${pct!==null ? pct+'%' : '—'}</td>
+          <td class="t-chevron">›</td>
+        </tr>`;
+      }).join('') +
+      `</tbody></table></div>`;
+  } else {
+    html += `<div class="task-empty">No revenue data yet. Add the first month below.</div>`;
+  }
+
+  html += `<button class="btn-add-task" onclick="openRevenueModal(null)">+ Add Month</button></div>`;
+  return html;
+}
+
+function openRevenueModal(entry) {
+  revenueModalOpen    = true;
+  revenueEntryEditing = entry;
+  renderRevenueModal();
+}
+function openRevenueModalById(id) {
+  const p = getProj(activeProjectId);
+  openRevenueModal(p?.revenueEntries?.find(r => r.id === id) || null);
+}
+function closeRevenueModal() {
+  revenueModalOpen    = false;
+  revenueEntryEditing = null;
+  renderRevenueModal();
+}
+
+function renderRevenueModal() {
+  const el = document.getElementById('revenue-modal');
+  if (!el) return;
+  if (!revenueModalOpen) { el.classList.remove('open'); el.innerHTML = ''; return; }
+  el.innerHTML = buildRevenueModal(revenueEntryEditing);
+  el.classList.add('open');
+}
+
+function buildRevenueModal(e) {
+  const isEdit = !!e;
+  return `<div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-title">${isEdit ? fmtMonth(e.month) : 'Add Monthly Revenue'}</div>
+      <button class="btn-icon" onclick="closeRevenueModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-field form-full"><label>Month *</label><input type="month" id="rv-month" value="${isEdit ? e.month.slice(0,7) : ''}" ${isEdit ? 'disabled' : ''}></div>
+        <div class="form-field"><label>Potential Revenue (IDR)</label><input type="number" id="rv-potential" min="0" value="${isEdit && e.potential_revenue!=null ? e.potential_revenue : ''}" placeholder="0"></div>
+        <div class="form-field"><label>Actual Revenue (IDR)</label><input type="number" id="rv-actual" min="0" value="${isEdit && e.actual_revenue!=null ? e.actual_revenue : ''}" placeholder="0"></div>
+        <div class="form-field form-full"><label>Notes</label><textarea id="rv-notes" placeholder="Any context or notes...">${esc(isEdit ? e.notes||'' : '')}</textarea></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      ${isEdit ? `<button class="btn-ghost" style="color:var(--hot);margin-right:auto" onclick="deleteRevenueEntry('${e.id}')">Delete</button>` : ''}
+      <button class="btn-ghost" onclick="closeRevenueModal()">Cancel</button>
+      <button class="btn-primary" onclick="saveRevenueEntry()">Save</button>
+    </div>
+  </div>`;
+}
+
+async function saveRevenueEntry() {
+  const isEdit = !!revenueEntryEditing;
+  const monthInput = document.getElementById('rv-month')?.value; // 'YYYY-MM'
+  if (!isEdit && !monthInput) { alert('Month is required.'); return; }
+  const month = isEdit ? revenueEntryEditing.month : monthInput + '-01';
+
+  const body = {
+    month,
+    potential_revenue: document.getElementById('rv-potential')?.value || null,
+    actual_revenue:    document.getElementById('rv-actual')?.value || null,
+    notes:             document.getElementById('rv-notes')?.value || null,
+  };
+  const json = await api('POST', `/revenue/projects/${activeProjectId}`, body);
+  if (!json || json.error) { alert(json?.error || 'Save failed'); return; }
+
+  const p = getProj(activeProjectId);
+  if (p) {
+    p.revenueEntries = p.revenueEntries || [];
+    const idx = p.revenueEntries.findIndex(r => r.month === json.data.month);
+    if (idx !== -1) p.revenueEntries[idx] = json.data; else p.revenueEntries.push(json.data);
+  }
+  revenueModalOpen = false;
+  revenueEntryEditing = null;
+  renderDetail();
+  renderRevenueModal();
+}
+
+async function deleteRevenueEntry(id) {
+  if (!confirm('Delete this month\'s revenue entry?')) return;
+  const json = await api('DELETE', `/revenue/${id}`);
+  if (!json || json.error) { alert(json?.error || 'Delete failed'); return; }
+  const p = getProj(activeProjectId);
+  if (p) p.revenueEntries = (p.revenueEntries || []).filter(r => r.id !== id);
+  revenueModalOpen = false;
+  revenueEntryEditing = null;
+  renderDetail();
+  renderRevenueModal();
+}
+
 /* ── TIMELINE EDIT ──────────────────────────────────────── */
 function toggleTimeline() { editingTimeline = !editingTimeline; renderDetail(); }
 
@@ -548,6 +792,8 @@ async function saveInfo() {
     actual_end:   p.actualEnd,
     mono:       p.mono,
     mono_color: p.monoColor,
+    is_live:      p.isLive,
+    go_live_date: p.goLiveDate,
   };
   const json = await api('PUT', `/projects/${p.id}`, body);
   if (!json || json.error) { alert(json?.error || 'Save failed'); return; }
@@ -583,92 +829,313 @@ function buildProjectBody(p) {
     actual_end:   p.actualEnd,
     mono:         p.mono,
     mono_color:   p.monoColor,
+    is_live:      p.isLive,
+    go_live_date: p.goLiveDate,
   };
 }
 
-/* ── TASK FORM ROW ──────────────────────────────────────── */
-function taskFormRow(task, isNew) {
-  const t = task || { id:'',name:'',planStart:'',planEnd:'',actualStart:'',actualEnd:'',progress:0,status:'not-started',remarks:'' };
+/* ── GO LIVE ────────────────────────────────────────────── */
+async function toggleGoLive() {
+  const p = getProj(activeProjectId);
+  if (!p) return;
+  const goingLive = !p.isLive;
+  const msg = goingLive
+    ? `Mark "${p.project}" as Go Live today (${fmtFull(todayISO())})?`
+    : `Revert "${p.project}" from Go Live status?`;
+  if (!confirm(msg)) return;
+
+  const body = { ...buildProjectBody(p), is_live: goingLive, go_live_date: goingLive ? todayISO() : null };
+  const json = await api('PUT', `/projects/${p.id}`, body);
+  if (!json || json.error) { alert(json?.error || 'Save failed'); return; }
+
+  const updated = normalizeProject(json.data);
+  updated.tasks        = p.tasks;
+  updated._tasksLoaded = p._tasksLoaded;
+  const idx = STATE.findIndex(x => x.id === p.id);
+  if (idx !== -1) STATE[idx] = updated;
+  activeProjectId = updated.id;
+  renderGrid();
+  renderDetail();
+}
+
+/* ── TASK CARD MODAL ────────────────────────────────────── */
+// Clicking any task row opens this card: full edit fields, plus (for a
+// top-level task) its subtask list with an inline add-subtask form.
+function renderTaskCardModal() {
+  const el = document.getElementById('task-card-modal');
+  if (!el) return;
+  if (!openTaskId) { el.classList.remove('open'); el.innerHTML = ''; return; }
+
+  const p      = getProj(activeProjectId);
+  const isNew  = openTaskId === 'new';
+  const task   = isNew ? null : p?.tasks.find(t => t.id === openTaskId);
+  if (!isNew && !task) { openTaskId = null; el.classList.remove('open'); el.innerHTML = ''; return; }
+
+  el.innerHTML = buildTaskCard(p, task, isNew);
+  el.classList.add('open');
+}
+
+function buildTaskCard(p, task, isNew) {
+  const t = task || { id:'', name:'', planStart:'', planEnd:'', actualStart:'', actualEnd:'', progress:0, status:'not-started', remarks:'', parentId:null };
   const statusOpts = Object.entries(TASK_STATUS).map(([k,v]) =>
     `<option value="${k}"${k===t.status?' selected':''}>${v.label}</option>`).join('');
-  const onSave   = isNew ? `saveNewTask()`   : `saveEdit('${t.id}')`;
-  const onCancel = isNew ? `cancelAdd()`     : `cancelEdit()`;
-  const inp = (id,type,val,w,extra='') =>
-    `<input type="${type}" id="${id}" class="tf-input" value="${esc(val)}" style="width:${w}" ${extra}>`;
-  return `<tr style="background:rgba(77,163,255,0.04)">
-    <td>${inp('tf-name','text',t.name,'150px','placeholder="Task name"')}</td>
-    <td>${inp('tf-ps','date',t.planStart||'','115px')}</td>
-    <td>${inp('tf-pe','date',t.planEnd||'','115px')}</td>
-    <td style="color:var(--text-muted);font-size:10px">—</td>
-    <td>${inp('tf-as','date',t.actualStart||'','115px')}</td>
-    <td>${inp('tf-ae','date',t.actualEnd||'','115px')}</td>
-    <td style="color:var(--text-muted);font-size:10px">—</td>
-    <td>${inp('tf-prog','number',t.progress,'55px','min="0" max="100"')}</td>
-    <td><select id="tf-status" class="tf-input" style="width:110px">${statusOpts}</select></td>
-    <td>${inp('tf-remarks','text',t.remarks||'','100px','placeholder="Remarks..."')}</td>
-    <td>
-      <div class="t-actions">
-        <button class="t-btn save" onclick="${onSave}" title="Save">✓</button>
-        <button class="t-btn del"  onclick="${onCancel}" title="Cancel">×</button>
-      </div>
-    </td>
-  </tr>`;
-}
+  const parent = t.parentId ? p?.tasks.find(x => x.id === t.parentId) : null;
 
-/* ── TASK CRUD ──────────────────────────────────────────── */
-function openAddForm()  { showAddForm = true;  editingTaskId = null; renderDetail(); }
-function cancelAdd()    { showAddForm = false; renderDetail(); }
-function cancelEdit()   { editingTaskId = null; renderDetail(); }
-function startEdit(id)  { editingTaskId = id; showAddForm = false; renderDetail(); }
+  let html = `<div class="modal-box task-card-box">
+    <div class="modal-header">
+      <div class="modal-title">${isNew ? 'New Task' : esc(t.name)}</div>
+      <button class="btn-icon" onclick="closeTaskCard()">×</button>
+    </div>
+    <div class="modal-body">`;
 
-function readTaskForm() {
-  return {
-    name:        document.getElementById('tf-name')?.value.trim()    || '',
-    plan_start:  document.getElementById('tf-ps')?.value              || null,
-    plan_end:    document.getElementById('tf-pe')?.value              || null,
-    actual_start:document.getElementById('tf-as')?.value              || null,
-    actual_end:  document.getElementById('tf-ae')?.value              || null,
-    progress:    parseInt(document.getElementById('tf-prog')?.value   || '0', 10),
-    status:      document.getElementById('tf-status')?.value          || 'not-started',
-    remarks:     document.getElementById('tf-remarks')?.value         || '',
-  };
-}
+  if (parent) html += `<div class="subtask-of-note">Subtask of: ${esc(parent.name)}</div>`;
 
-async function saveNewTask() {
-  const f = readTaskForm();
-  if (!f.name || !f.plan_start || !f.plan_end) { alert('Task name, plan start and plan end are required.'); return; }
-  const json = await api('POST', `/projects/${activeProjectId}/tasks`, f);
-  if (!json || json.error) { alert(json?.error || 'Save failed'); return; }
-  const p = getProj(activeProjectId);
-  if (p) { p.tasks.push(normalizeTask(json.data)); }
-  showAddForm = false;
-  renderGrid();
-  renderDetail();
-}
+  html += `<div class="form-grid">
+      <div class="form-field form-full"><label>Task Name *</label><input type="text" id="tc-name" value="${esc(t.name)}" placeholder="Task name"></div>
+      <div class="form-field"><label>Plan Start *</label><input type="date" id="tc-ps" value="${t.planStart||''}"></div>
+      <div class="form-field"><label>Plan End *</label><input type="date" id="tc-pe" value="${t.planEnd||''}"></div>
+      <div class="form-field"><label>Actual Start</label><input type="date" id="tc-as" value="${t.actualStart||''}"></div>
+      <div class="form-field"><label>Actual End</label><input type="date" id="tc-ae" value="${t.actualEnd||''}"></div>
+      <div class="form-field"><label>Progress %</label><input type="number" id="tc-prog" min="0" max="100" value="${t.progress}"></div>
+      <div class="form-field"><label>Status</label><select id="tc-status">${statusOpts}</select></div>
+      <div class="form-field form-full"><label>Remarks</label><textarea id="tc-remarks" placeholder="Any context or notes...">${esc(t.remarks||'')}</textarea></div>
+    </div>`;
 
-async function saveEdit(taskId) {
-  const f = readTaskForm();
-  if (!f.name || !f.plan_start || !f.plan_end) { alert('Task name, plan start and plan end are required.'); return; }
-  const json = await api('PUT', `/tasks/${taskId}`, f);
-  if (!json || json.error) { alert(json?.error || 'Save failed'); return; }
-  const p = getProj(activeProjectId);
-  if (p) {
-    const idx = p.tasks.findIndex(t => t.id === taskId);
-    if (idx !== -1) p.tasks[idx] = normalizeTask(json.data);
+  if (!isNew && !t.parentId) {
+    const subs = childrenOf(p?.tasks||[], t.id);
+    html += `<div class="form-sep"></div><div class="form-lbl-section">Subtasks (${subs.length})</div>`;
+    if (subs.length) {
+      html += `<div class="card-subtask-list">` + subs.map(st => {
+        const ts = TASK_STATUS[st.status] || TASK_STATUS['not-started'];
+        return `<div class="card-subtask-row" onclick="openTaskCard('${st.id}')">
+          <span class="cs-name">${esc(st.name)}</span>
+          <span class="ts-badge" style="background:${ts.bg};color:${ts.color}">${ts.label}</span>
+          <span class="cs-prog">${st.progress}%</span>
+        </div>`;
+      }).join('') + `</div>`;
+    }
+
+    if (cardAddingSubtask) {
+      html += `<div style="background:rgba(77,163,255,0.04);border:1px solid rgba(77,163,255,0.12);border-radius:12px;padding:14px;margin-top:6px">
+        <div class="form-grid">
+          <div class="form-field form-full"><label>Subtask Name *</label><input type="text" id="scf-name" placeholder="Subtask name"></div>
+          <div class="form-field"><label>Plan Start *</label><input type="date" id="scf-ps"></div>
+          <div class="form-field"><label>Plan End *</label><input type="date" id="scf-pe"></div>
+          <div class="form-field"><label>Actual Start</label><input type="date" id="scf-as"></div>
+          <div class="form-field"><label>Actual End</label><input type="date" id="scf-ae"></div>
+          <div class="form-field"><label>Progress %</label><input type="number" id="scf-prog" min="0" max="100" value="0"></div>
+          <div class="form-field"><label>Status</label><select id="scf-status">${statusOpts}</select></div>
+          <div class="form-field form-full"><label>Remarks</label><textarea id="scf-remarks" placeholder="Any context or notes..."></textarea></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="btn-ghost" style="padding:6px 14px;font-size:12px" onclick="cancelAddSubtaskInCard()">Cancel</button>
+          <button class="btn-primary" style="padding:6px 14px;font-size:12px" onclick="saveSubtaskInCard()">Save Subtask</button>
+        </div>
+      </div>`;
+    } else {
+      html += `<button class="btn-add-task" style="margin-top:2px" onclick="startAddSubtaskInCard()">+ Add Subtask</button>`;
+    }
   }
-  editingTaskId = null;
-  renderGrid();
-  renderDetail();
+
+  if (!isNew) {
+    const files = t.attachments || [];
+    html += `<div class="form-sep"></div><div class="form-lbl-section">Attachments (${files.length})</div>`;
+    if (files.length) {
+      html += `<div class="card-attachment-list">` + files.map(a => `
+        <div class="card-attachment-row">
+          <span>📄</span>
+          <span class="ca-name" title="${esc(a.filename)}" onclick="downloadAttachment('${a.id}','${esc(a.filename)}')">${esc(a.filename)}</span>
+          <span class="ca-size">${fmtBytes(a.size_bytes)}</span>
+          <button class="btn-icon" style="width:22px;height:22px;font-size:11px" onclick="deleteAttachment('${a.id}')" title="Delete">×</button>
+        </div>`).join('') + `</div>`;
+    }
+    html += `<input type="file" id="tc-file-input" style="display:none" onchange="handleFileSelected(event)">
+      <button class="btn-add-task" style="margin-top:2px" onclick="document.getElementById('tc-file-input').click()">+ Upload Document</button>`;
+  }
+
+  html += `</div>
+    <div class="modal-footer">
+      ${isNew ? '' : `<button class="btn-ghost" style="color:var(--hot);margin-right:auto" onclick="deleteTaskFromCard()">Delete</button>`}
+      <button class="btn-ghost" onclick="closeTaskCard()">Cancel</button>
+      <button class="btn-primary" onclick="saveTaskCard()">Save</button>
+    </div>
+  </div>`;
+  return html;
 }
 
-async function deleteTask(taskId) {
-  if (!confirm('Delete this task?')) return;
-  const json = await api('DELETE', `/tasks/${taskId}`);
+function fmtBytes(n) {
+  if (!n && n !== 0) return '';
+  if (n < 1024) return n + ' B';
+  if (n < 1024*1024) return (n/1024).toFixed(1) + ' KB';
+  return (n/1024/1024).toFixed(1) + ' MB';
+}
+
+async function openTaskCard(id) {
+  openTaskId = id;
+  cardAddingSubtask = false;
+  if (id && id !== 'new') {
+    const p    = getProj(activeProjectId);
+    const task = p?.tasks.find(t => t.id === id);
+    if (task && !task._attachmentsLoaded) {
+      task.attachments = await loadAttachments(id);
+      task._attachmentsLoaded = true;
+    }
+  }
+  renderTaskCardModal();
+}
+function closeTaskCard()   { openTaskId = null; cardAddingSubtask = false; renderTaskCardModal(); }
+function startAddSubtaskInCard()  { cardAddingSubtask = true; renderTaskCardModal(); }
+function cancelAddSubtaskInCard() { cardAddingSubtask = false; renderTaskCardModal(); }
+
+async function saveTaskCard() {
+  const name = document.getElementById('tc-name')?.value.trim() || '';
+  const ps   = document.getElementById('tc-ps')?.value || null;
+  const pe   = document.getElementById('tc-pe')?.value || null;
+  if (!name || !ps || !pe) { alert('Task name, plan start and plan end are required.'); return; }
+
+  const body = {
+    name,
+    plan_start:   ps,
+    plan_end:     pe,
+    actual_start: document.getElementById('tc-as')?.value || null,
+    actual_end:   document.getElementById('tc-ae')?.value || null,
+    progress:     parseInt(document.getElementById('tc-prog')?.value || '0', 10),
+    status:       document.getElementById('tc-status')?.value || 'not-started',
+    remarks:      document.getElementById('tc-remarks')?.value || '',
+  };
+
+  const p     = getProj(activeProjectId);
+  const isNew = openTaskId === 'new';
+
+  if (isNew) {
+    const json = await api('POST', `/projects/${activeProjectId}/tasks`, body);
+    if (!json || json.error) { alert(json?.error || 'Save failed'); return; }
+    if (p) p.tasks.push(normalizeTask(json.data));
+  } else {
+    const existing = p?.tasks.find(t => t.id === openTaskId);
+    body.parent_id = existing?.parentId || null;
+    const json = await api('PUT', `/tasks/${openTaskId}`, body);
+    if (!json || json.error) { alert(json?.error || 'Save failed'); return; }
+    if (p) {
+      const idx = p.tasks.findIndex(t => t.id === openTaskId);
+      if (idx !== -1) p.tasks[idx] = normalizeTask(json.data);
+    }
+  }
+
+  openTaskId = null;
+  cardAddingSubtask = false;
+  renderGrid();
+  renderDetail();
+  renderTaskCardModal();
+}
+
+async function saveSubtaskInCard() {
+  const name = document.getElementById('scf-name')?.value.trim() || '';
+  const ps   = document.getElementById('scf-ps')?.value || null;
+  const pe   = document.getElementById('scf-pe')?.value || null;
+  if (!name || !ps || !pe) { alert('Subtask name, plan start and plan end are required.'); return; }
+
+  const body = {
+    name,
+    plan_start:   ps,
+    plan_end:     pe,
+    actual_start: document.getElementById('scf-as')?.value || null,
+    actual_end:   document.getElementById('scf-ae')?.value || null,
+    progress:     parseInt(document.getElementById('scf-prog')?.value || '0', 10),
+    status:       document.getElementById('scf-status')?.value || 'not-started',
+    remarks:      document.getElementById('scf-remarks')?.value || '',
+    parent_id:    openTaskId,
+  };
+
+  const json = await api('POST', `/projects/${activeProjectId}/tasks`, body);
+  if (!json || json.error) { alert(json?.error || 'Save failed'); return; }
+  const p = getProj(activeProjectId);
+  if (p) p.tasks.push(normalizeTask(json.data));
+
+  cardAddingSubtask = false;
+  renderGrid();
+  renderDetail();
+  renderTaskCardModal();
+}
+
+async function deleteTaskFromCard() {
+  const p = getProj(activeProjectId);
+  const hasChildren = p?.tasks.some(t => t.parentId === openTaskId);
+  if (!confirm(hasChildren ? 'Delete this task and its subtasks?' : 'Delete this task?')) return;
+  const json = await api('DELETE', `/tasks/${openTaskId}`);
+  if (!json || json.error) { alert(json?.error || 'Delete failed'); return; }
+  if (p) p.tasks = p.tasks.filter(t => t.id !== openTaskId && t.parentId !== openTaskId);
+  openTaskId = null;
+  renderGrid();
+  renderDetail();
+  renderTaskCardModal();
+}
+
+/* ── ATTACHMENTS ────────────────────────────────────────── */
+// Uses raw fetch (not the api() helper) — uploads need multipart/form-data
+// and downloads need a Blob, neither of which fit api()'s JSON-in/JSON-out shape.
+async function loadAttachments(taskId) {
+  const json = await api('GET', `/attachments/tasks/${taskId}`);
+  return (json && !json.error) ? json.data : [];
+}
+
+async function handleFileSelected(e) {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  if (file.size > 15 * 1024 * 1024) { alert('File too large — max 15MB.'); return; }
+
+  const fd = new FormData();
+  fd.append('file', file);
+  let json;
+  try {
+    const res = await fetch(`/api/attachments/tasks/${openTaskId}`, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + getToken() },
+      body: fd,
+    });
+    if (res.status === 401) { logout(); return; }
+    json = await res.json();
+  } catch (err) {
+    alert('Network error — check connection');
+    return;
+  }
+  if (!json || json.error) { alert(json?.error || 'Upload failed'); return; }
+
+  const p = getProj(activeProjectId);
+  const task = p?.tasks.find(t => t.id === openTaskId);
+  if (task) { task.attachments = task.attachments || []; task.attachments.push(json.data); }
+  renderTaskCardModal();
+}
+
+async function downloadAttachment(id, filename) {
+  let res;
+  try {
+    res = await fetch(`/api/attachments/${id}/download`, {
+      headers: { 'Authorization': 'Bearer ' + getToken() },
+    });
+  } catch (err) {
+    alert('Network error — check connection');
+    return;
+  }
+  if (res.status === 401) { logout(); return; }
+  if (!res.ok) { alert('Download failed'); return; }
+  const blob = await res.blob();
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function deleteAttachment(id) {
+  if (!confirm('Delete this attachment?')) return;
+  const json = await api('DELETE', `/attachments/${id}`);
   if (!json || json.error) { alert(json?.error || 'Delete failed'); return; }
   const p = getProj(activeProjectId);
-  if (p) p.tasks = p.tasks.filter(t => t.id !== taskId);
-  renderGrid();
-  renderDetail();
+  const task = p?.tasks.find(t => t.id === openTaskId);
+  if (task) task.attachments = (task.attachments || []).filter(a => a.id !== id);
+  renderTaskCardModal();
 }
 
 async function deleteProject(projectId) {
@@ -743,7 +1210,9 @@ document.querySelectorAll('.filter-btn').forEach(btn => {
 /* ── KEYBOARD ───────────────────────────────────────────── */
 document.addEventListener('keydown', e => {
   if (e.key==='Escape') {
-    if (document.getElementById('project-modal').classList.contains('open')) closeProjectModal();
+    if (document.getElementById('revenue-modal')?.classList.contains('open')) closeRevenueModal();
+    else if (document.getElementById('task-card-modal')?.classList.contains('open')) closeTaskCard();
+    else if (document.getElementById('project-modal').classList.contains('open')) closeProjectModal();
     else if (currentView==='detail') showList();
   }
 });

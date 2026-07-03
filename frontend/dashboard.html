@@ -10,7 +10,7 @@
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231a6eb5'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-weight='700' font-size='12' fill='white'%3EREY%3C/text%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/style.css">
 </head>
 <body>
@@ -23,7 +23,7 @@
   <!-- SHARED HEADER -->
   <header class="header">
     <div class="brand">
-      <div class="logo">REY</div>
+      <div class="logo">rey</div>
       <div>
         <div class="brand-title">Project Tracker</div>
         <div class="brand-sub">PT Vertika Technologies Nusantara — Active Portfolio</div>
@@ -48,6 +48,7 @@
       <button class="filter-btn" data-filter="uw">Olvo UW</button>
       <button class="filter-btn" data-filter="platform">Platform</button>
       <button class="filter-btn" data-filter="done">Completed</button>
+      <button class="filter-btn filter-btn-live" data-filter="live">Live</button>
     </div>
     <div class="grid-wrap">
       <div class="grid" id="grid">
@@ -111,6 +112,12 @@
       </div>
     </div>
   </div>
+
+  <!-- TASK CARD MODAL (content rendered dynamically) -->
+  <div id="task-card-modal" class="modal-overlay"></div>
+
+  <!-- REVENUE ENTRY MODAL (content rendered dynamically) -->
+  <div id="revenue-modal" class="modal-overlay"></div>
 
   <script src="/assets/app.js"></script>
 </body>
