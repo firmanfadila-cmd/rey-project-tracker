@@ -35,11 +35,11 @@ async function api(method, path, body) {
 /* ── CONSTANTS ──────────────────────────────────────────── */
 const STATUS_COLOR = { hot:'#f5730c', active:'#4da3ff', poc:'#ffd166', v2:'#b594f8', done:'#2dd4a7' };
 const TASK_STATUS = {
-  'not-started': { label:'Not Started', color:'#3f607e',  bg:'rgba(63,96,126,0.22)'  },
-  'in-progress': { label:'In Progress', color:'#4da3ff',  bg:'rgba(77,163,255,0.14)' },
-  'completed':   { label:'Completed',   color:'#2dd4a7',  bg:'rgba(45,212,167,0.14)' },
-  'delayed':     { label:'Delayed',     color:'#ff6b6b',  bg:'rgba(255,107,107,0.14)'},
-  'on-hold':     { label:'On Hold',     color:'#ffd166',  bg:'rgba(255,209,102,0.14)'},
+  'not-started': { label:'Not Started', color:'#5c7086',  bg:'rgba(92,112,134,0.14)' },
+  'in-progress': { label:'In Progress', color:'#145a94',  bg:'rgba(77,163,255,0.16)' },
+  'completed':   { label:'Completed',   color:'#0f8f6f',  bg:'rgba(45,212,167,0.16)' },
+  'delayed':     { label:'Delayed',     color:'#c23b3b',  bg:'rgba(194,59,59,0.14)'  },
+  'on-hold':     { label:'On Hold',     color:'#8a6d00',  bg:'rgba(255,209,102,0.22)'},
 };
 const TAG_CLASS = { 'Olvo Claims':'tag-claims','Olvo UW':'tag-uw','Platform':'tag-platform' };
 const CAT_MAP   = { 'Olvo Claims':'claims','Olvo UW':'uw','Platform':'platform','Analytics':'other' };
@@ -107,6 +107,36 @@ function byTaskOrder(a, b) {
 function topLevelOf(tasks)         { return tasks.filter(t => !t.parentId).sort(byTaskOrder); }
 function childrenOf(tasks, parentId) { return tasks.filter(t => t.parentId === parentId).sort(byTaskOrder); }
 
+// Next sequential number for a new task/subtask — siblings under the same
+// parent (or top-level if parentId is null), based on the highest existing
+// number rather than a plain count, so a mid-list deletion doesn't collide.
+function nextTaskNumber(tasks, parentId) {
+  const siblings = parentId ? childrenOf(tasks, parentId) : topLevelOf(tasks);
+  const maxNum = siblings.reduce((max, t) => {
+    const n = taskOrderKey(t);
+    return (n !== Infinity && n > max) ? n : max;
+  }, 0);
+  return maxNum + 1;
+}
+
+// Auto-prefixes "N. " onto a task name unless the user already typed their
+// own leading number.
+function autoNumberName(name, tasks, parentId) {
+  if (/^\d+\.\s*/.test(name)) return name;
+  return `${nextTaskNumber(tasks, parentId)}. ${name}`;
+}
+
+// Warn (not block) when a subtask's dates fall outside its parent task's
+// plan range — lets the user proceed deliberately rather than silently.
+function validateSubtaskDates(parent, ps, pe) {
+  if (!parent?.planStart || !parent?.planEnd) return true;
+  const issues = [];
+  if (ps < parent.planStart) issues.push(`starts before the parent task's plan start (${fmtFull(parent.planStart)})`);
+  if (pe > parent.planEnd)   issues.push(`ends after the parent task's plan end (${fmtFull(parent.planEnd)})`);
+  if (!issues.length) return true;
+  return confirm(`This subtask ${issues.join(' and ')}. Continue anyway?`);
+}
+
 // Top-level tasks followed immediately by their subtasks, in order —
 // keeps the table and Gantt chart in the same visual order.
 function orderedTasks(tasks) {
@@ -138,7 +168,16 @@ function todayISO() { return new Date().toISOString().slice(0,10); }
 
 function fmtIDR(n) {
   if (n === null || n === undefined || n === '') return null;
-  return 'IDR ' + Math.round(Number(n)).toLocaleString('id-ID');
+  return 'IDR ' + Math.round(Number(n)).toLocaleString('en-US');
+}
+
+// The project-level "Potential Revenue" field is free text (e.g. "IDR 2.5B"),
+// not a number input — comma-format it only when it's actually a plain number,
+// otherwise leave whatever the user typed untouched.
+function fmtMoneyDisplay(val) {
+  if (!val) return null;
+  const str = String(val).trim();
+  return /^\d+(\.\d+)?$/.test(str) ? Number(str).toLocaleString('en-US') : str;
 }
 
 // Compares how far along the plan SHOULD be by today (elapsed / total plan
@@ -264,7 +303,7 @@ function renderGrid() {
       <div class="card-row"><span class="row-lbl">DL</span><span class="row-val ${p.urgent?'urgent':''}">${esc(p.deadline||'—')}</span></div>
       <div class="card-row"><span class="row-lbl">NEXT</span><span class="row-val primary">${esc(p.next||'—')}</span></div>
       <div class="card-row"><span class="row-lbl">PM</span><span class="row-val">${esc(p.pm||'—')}</span></div>
-      <div class="card-row"><span class="row-lbl">REV</span><span class="row-val revenue">${esc(p.revenue||'—')}</span></div>
+      <div class="card-row"><span class="row-lbl">REV</span><span class="row-val revenue">${esc(fmtMoneyDisplay(p.revenue) || '—')}</span></div>
       <div class="progress-wrap">
         <div class="progress-header">
           <span class="progress-lbl">Tasks ${prog.done}/${prog.total}</span>
@@ -368,7 +407,7 @@ function buildDetail(p) {
         <div class="detail-title">${esc(p.project)}</div>
         <div class="detail-meta">
           <span><span class="meta-lbl">PM</span> ${esc(p.pm||'—')}</span>
-          <span><span class="meta-lbl">Revenue</span> <span style="color:var(--done);font-weight:600">${esc(p.revenue||'—')}</span></span>
+          <span><span class="meta-lbl">Revenue</span> <span style="color:var(--done);font-weight:600">${esc(fmtMoneyDisplay(p.revenue) || '—')}</span></span>
           <span><span class="meta-lbl">Phase</span> ${esc(p.phase||'—')}</span>
           <span><span class="meta-lbl">Progress</span> ${prog.pct}%</span>
         </div>
@@ -457,14 +496,14 @@ function buildDetail(p) {
     <div class="timeline-grid">
       <div class="timeline-chip">
         <div class="tc-lbl">Schedule Status</div>
-        <div class="tc-dates" style="color:${health ? {ontrack:'#2dd4a7',slight:'#ffd166',delayed:'#ff6b6b'}[health.tone] : 'var(--text-2)'}">
+        <div class="tc-dates" style="color:${health ? {ontrack:'#0f8f6f',slight:'#8a6d00',delayed:'#c23b3b'}[health.tone] : 'var(--text-2)'}">
           ${health ? (health.tone==='ontrack' ? '✅ ' : '⚠️ ') + health.label : '—'}
         </div>
         <div class="tc-days">Based on plan progress vs. task completion</div>
       </div>
       <div class="timeline-chip">
         <div class="tc-lbl">Potential Revenue</div>
-        <div class="tc-dates">${esc(p.revenue || '—')}</div>
+        <div class="tc-dates">${esc(fmtMoneyDisplay(p.revenue) || '—')}</div>
         <div class="tc-days">Set via "Edit Project Info"</div>
       </div>
     </div>
@@ -517,8 +556,17 @@ function taskRow(t, color, today, isSub) {
   const pd = daysSpan(t.planStart, t.planEnd);
   const ad = t.actualStart ? daysSpan(t.actualStart, t.actualEnd||today) : null;
   const ts = TASK_STATUS[t.status] || TASK_STATUS['not-started'];
-  return `<tr class="task-row-click ${isSub ? 'subtask-row' : ''}" onclick="openTaskCard('${t.id}')">
-    <td><span class="task-name-cell" title="${esc(t.name)}">${isSub ? '<span class="subtask-arrow">↳</span>' : ''}${esc(t.name)}</span></td>
+  return `<tr class="task-row-click ${isSub ? 'subtask-row' : ''}" draggable="true"
+      data-task-id="${t.id}"
+      ondragstart="taskDragStart(event,'${t.id}')" ondragover="taskDragOver(event)"
+      ondragleave="taskDragLeave(event)" ondragend="taskDragEnd(event)" ondrop="taskDrop(event,'${t.id}')"
+      onclick="taskRowClick('${t.id}')">
+    <td>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span class="drag-handle" title="Drag to reorder">⠿</span>
+        <span class="task-name-cell" title="${esc(t.name)}">${isSub ? '<span class="subtask-arrow">↳</span>' : ''}${esc(t.name)}</span>
+      </div>
+    </td>
     <td>${fmtShort(t.planStart)}</td><td>${fmtShort(t.planEnd)}</td><td>${pd||'—'}</td>
     <td>${fmtShort(t.actualStart)}</td><td>${fmtShort(t.actualEnd)}</td><td>${ad||'—'}</td>
     <td>
@@ -530,6 +578,79 @@ function taskRow(t, color, today, isSub) {
     <td><span class="ts-badge" style="background:${ts.bg};color:${ts.color}">${ts.label}</span></td>
     <td class="t-chevron">›</td>
   </tr>`;
+}
+
+/* ── DRAG-TO-REORDER ─────────────────────────────────────── */
+let dragTaskId  = null;
+let justDragged = false;
+
+function taskRowClick(id) {
+  if (justDragged) { justDragged = false; return; }
+  openTaskCard(id);
+}
+
+function taskDragStart(e, id) {
+  dragTaskId = id;
+  e.dataTransfer.effectAllowed = 'move';
+  e.currentTarget.classList.add('dragging');
+}
+function taskDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  e.currentTarget.classList.add('drag-over');
+}
+function taskDragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
+function taskDragEnd(e)   { e.currentTarget.classList.remove('dragging'); }
+
+function taskUpdateBody(t) {
+  return {
+    name: t.name, plan_start: t.planStart, plan_end: t.planEnd,
+    actual_start: t.actualStart, actual_end: t.actualEnd,
+    progress: t.progress, status: t.status, remarks: t.remarks,
+    parent_id: t.parentId || null,
+  };
+}
+
+async function taskDrop(e, targetId) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  justDragged = true;
+  const draggedId = dragTaskId;
+  dragTaskId = null;
+  if (!draggedId || draggedId === targetId) return;
+
+  const p = getProj(activeProjectId);
+  if (!p) return;
+  const dragged = p.tasks.find(t => t.id === draggedId);
+  const target  = p.tasks.find(t => t.id === targetId);
+  if (!dragged || !target) return;
+  // Only allow reordering within the same sibling group — top-level tasks
+  // among themselves, or subtasks among their siblings under one parent.
+  if ((dragged.parentId || null) !== (target.parentId || null)) return;
+
+  const siblings = dragged.parentId ? childrenOf(p.tasks, dragged.parentId) : topLevelOf(p.tasks);
+  const fromIdx = siblings.findIndex(t => t.id === draggedId);
+  const toIdx   = siblings.findIndex(t => t.id === targetId);
+  if (fromIdx === -1 || toIdx === -1) return;
+  siblings.splice(toIdx, 0, siblings.splice(fromIdx, 1)[0]);
+
+  const updates = [];
+  siblings.forEach((t, i) => {
+    const desc = t.name.replace(/^\d+\.\s*/, '');
+    const newName = `${i + 1}. ${desc}`;
+    if (newName !== t.name) { t.name = newName; updates.push(t); }
+  });
+  if (!updates.length) return;
+
+  renderDetail(); // reflect the new order immediately, persist after
+  for (const t of updates) {
+    const json = await api('PUT', `/tasks/${t.id}`, taskUpdateBody(t));
+    if (json && !json.error) {
+      const idx = p.tasks.findIndex(x => x.id === t.id);
+      if (idx !== -1) p.tasks[idx] = normalizeTask(json.data);
+    }
+  }
+  renderDetail();
 }
 
 /* ── GANTT ──────────────────────────────────────────────── */
@@ -555,7 +676,7 @@ function buildGantt(tasks, color) {
     const l   = toLeft(iso);
     if (l!==null) {
       const lbl = cur.toLocaleDateString('en-GB',{month:'short',year:'2-digit'});
-      axisTicks  += `<div style="position:absolute;left:${l}%;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.04)"></div>`;
+      axisTicks  += `<div style="position:absolute;left:${l}%;top:0;bottom:0;width:1px;background:rgba(13,27,42,0.07)"></div>`;
       axisLabels += `<div style="position:absolute;left:${l}%;transform:translateX(-50%);font-size:8.5px;font-family:'Space Mono',monospace;color:var(--text-muted);top:4px;white-space:nowrap">${lbl}</div>`;
     }
     cur.setMonth(cur.getMonth()+1);
@@ -572,12 +693,12 @@ function buildGantt(tasks, color) {
     const pw  = toWidth(t.planStart, t.planEnd);
     const al  = t.actualStart ? toLeft(t.actualStart) : null;
     const aw  = t.actualStart ? toWidth(t.actualStart, t.actualEnd||today) : 0;
-    const planBar   = pl!==null ? `<div style="position:absolute;left:${pl}%;width:${pw}%;height:8px;border-radius:3px;background:rgba(255,255,255,0.08);top:50%;transform:translateY(-50%)"></div>` : '';
+    const planBar   = pl!==null ? `<div style="position:absolute;left:${pl}%;width:${pw}%;height:8px;border-radius:3px;background:#e7ecf1;top:50%;transform:translateY(-50%)"></div>` : '';
     const actualBar = al!==null ? `<div style="position:absolute;left:${al}%;width:${aw}%;height:14px;border-radius:3px;overflow:hidden;top:50%;transform:translateY(-50%);background:${ts.bg}">
         <div style="width:${t.progress}%;height:100%;background:${ts.color};opacity:0.75;border-radius:3px"></div>
       </div>` : '';
     rows += `<div style="display:grid;grid-template-columns:130px 1fr;align-items:center;height:36px;margin-bottom:2px">
-      <div style="font-size:11px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:10px" title="${esc(t.name)}">${esc(t.name)}</div>
+      <div style="font-size:11px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:10px;${t.parentId?'padding-left:14px':''}" title="${esc(t.name)}">${t.parentId?'<span class="subtask-arrow">↳</span>':''}${esc(t.name)}</div>
       <div style="position:relative;height:100%">${axisTicks}${planBar}${actualBar}${todayLine}</div>
     </div>`;
   });
@@ -590,7 +711,7 @@ function buildGantt(tasks, color) {
     ${rows}
   </div></div>
   <div class="gantt-legend">
-    <div class="gantt-legend-item"><span style="display:inline-block;width:16px;height:5px;border-radius:3px;background:rgba(255,255,255,0.1)"></span> Plan</div>
+    <div class="gantt-legend-item"><span style="display:inline-block;width:16px;height:5px;border-radius:3px;background:#e7ecf1"></span> Plan</div>
     <div class="gantt-legend-item"><span style="display:inline-block;width:16px;height:10px;border-radius:3px;background:${color};opacity:0.6"></span> Actual</div>
     <div class="gantt-legend-item"><span style="display:inline-block;width:1.5px;height:12px;background:var(--hot);opacity:0.65"></span> Today</div>
   </div>`;
@@ -873,6 +994,61 @@ function renderTaskCardModal() {
 
   el.innerHTML = buildTaskCard(p, task, isNew);
   el.classList.add('open');
+  attachMentionSupport('tc-remarks', 'tc-mention-dd');
+  attachMentionSupport('scf-remarks', 'scf-mention-dd');
+}
+
+/* ── @MENTIONS IN REMARKS ───────────────────────────────── */
+let mentionableUsers = null;
+async function loadMentionableUsers() {
+  if (mentionableUsers) return mentionableUsers;
+  const json = await api('GET', '/users/mentionable');
+  mentionableUsers = (json && !json.error) ? json.data : [];
+  return mentionableUsers;
+}
+
+// Remarks stay a plain free-text field — this just makes "@" convenient by
+// offering an autocomplete of teammate names, which get inserted as plain
+// "@Name " text (no structured storage, no rendering changes elsewhere).
+function attachMentionSupport(textareaId, dropdownId) {
+  const ta = document.getElementById(textareaId);
+  if (!ta) return;
+  ta.addEventListener('input', async () => {
+    const pos = ta.selectionStart;
+    const m = /@([\w. ]{0,30})$/.exec(ta.value.slice(0, pos));
+    if (!m) { document.getElementById(dropdownId)?.remove(); return; }
+    const query = m[1].toLowerCase();
+    const users = (await loadMentionableUsers())
+      .filter(u => u.name.toLowerCase().includes(query))
+      .slice(0, 6);
+    renderMentionDropdown(ta, dropdownId, users, m[1].length);
+  });
+  ta.addEventListener('blur', () => {
+    setTimeout(() => document.getElementById(dropdownId)?.remove(), 150);
+  });
+}
+
+function renderMentionDropdown(ta, dropdownId, matches, partialLen) {
+  document.getElementById(dropdownId)?.remove();
+  if (!matches.length) return;
+  const dd = document.createElement('div');
+  dd.id = dropdownId;
+  dd.className = 'mention-dropdown';
+  dd.innerHTML = matches.map(u => `<div class="mention-item" data-name="${esc(u.name)}">${esc(u.name)}</div>`).join('');
+  ta.parentElement.style.position = 'relative';
+  ta.parentElement.appendChild(dd);
+  dd.querySelectorAll('.mention-item').forEach(item => {
+    item.addEventListener('mousedown', ev => {
+      ev.preventDefault();
+      const pos = ta.selectionStart;
+      const before = ta.value.slice(0, pos);
+      const newBefore = before.slice(0, before.length - partialLen - 1) + '@' + item.dataset.name + ' ';
+      ta.value = newBefore + ta.value.slice(pos);
+      ta.focus();
+      ta.setSelectionRange(newBefore.length, newBefore.length);
+      dd.remove();
+    });
+  });
 }
 
 function buildTaskCard(p, task, isNew) {
@@ -1008,12 +1184,17 @@ async function saveTaskCard() {
   const isNew = openTaskId === 'new';
 
   if (isNew) {
+    body.name = autoNumberName(body.name, p?.tasks || [], null);
     const json = await api('POST', `/projects/${activeProjectId}/tasks`, body);
     if (!json || json.error) { alert(json?.error || 'Save failed'); return; }
     if (p) p.tasks.push(normalizeTask(json.data));
   } else {
     const existing = p?.tasks.find(t => t.id === openTaskId);
     body.parent_id = existing?.parentId || null;
+    if (existing?.parentId) {
+      const parent = p?.tasks.find(t => t.id === existing.parentId);
+      if (!validateSubtaskDates(parent, ps, pe)) return;
+    }
     const json = await api('PUT', `/tasks/${openTaskId}`, body);
     if (!json || json.error) { alert(json?.error || 'Save failed'); return; }
     if (p) {
@@ -1035,8 +1216,12 @@ async function saveSubtaskInCard() {
   const pe   = document.getElementById('scf-pe')?.value || null;
   if (!name || !ps || !pe) { alert('Subtask name, plan start and plan end are required.'); return; }
 
+  const p      = getProj(activeProjectId);
+  const parent = p?.tasks.find(t => t.id === openTaskId);
+  if (!validateSubtaskDates(parent, ps, pe)) return;
+
   const body = {
-    name,
+    name:         autoNumberName(name, p?.tasks || [], openTaskId),
     plan_start:   ps,
     plan_end:     pe,
     actual_start: document.getElementById('scf-as')?.value || null,
@@ -1049,7 +1234,6 @@ async function saveSubtaskInCard() {
 
   const json = await api('POST', `/projects/${activeProjectId}/tasks`, body);
   if (!json || json.error) { alert(json?.error || 'Save failed'); return; }
-  const p = getProj(activeProjectId);
   if (p) p.tasks.push(normalizeTask(json.data));
 
   cardAddingSubtask = false;
@@ -1198,6 +1382,100 @@ async function submitNewProject() {
   closeProjectModal();
 }
 
+/* ── MANAGE USERS ───────────────────────────────────────── */
+let usersModalOpen = false;
+let usersList       = null;   // cached list, loaded on open
+
+function openUsersModal() {
+  usersModalOpen = true;
+  loadUsers().then(list => { usersList = list; renderUsersModal(); });
+  renderUsersModal(); // show immediately in a loading state, then re-render once fetched
+}
+function closeUsersModal() {
+  usersModalOpen = false;
+  renderUsersModal();
+}
+
+async function loadUsers() {
+  const json = await api('GET', '/users');
+  return (json && !json.error) ? json.data : [];
+}
+
+function fmtUserDate(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
+}
+
+function renderUsersModal() {
+  const el = document.getElementById('users-modal');
+  if (!el) return;
+  if (!usersModalOpen) { el.classList.remove('open'); el.innerHTML = ''; return; }
+  el.innerHTML = buildUsersModal();
+  el.classList.add('open');
+}
+
+function buildUsersModal() {
+  const me = getCurrentUser();
+  const rows = usersList === null
+    ? `<div class="task-empty">Loading…</div>`
+    : usersList.map(u => `
+      <div class="user-row">
+        <div style="flex:1;min-width:0">
+          <div class="user-row-name">${esc(u.name)}</div>
+          <div class="user-row-email">${esc(u.email)} · joined ${fmtUserDate(u.created_at)}</div>
+        </div>
+        <span class="role-badge ${u.role==='admin' ? 'role-badge-admin' : 'role-badge-member'}">${esc(u.role)}</span>
+        ${u.id !== me?.id ? `<button class="btn-icon" style="width:24px;height:24px;font-size:12px" onclick="deleteUserFromModal('${u.id}')" title="Delete">×</button>` : ''}
+      </div>`).join('');
+
+  return `<div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-title">Manage Users</div>
+      <button class="btn-icon" onclick="closeUsersModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-lbl-section" style="margin-bottom:10px">Existing Users (${usersList === null ? '…' : usersList.length})</div>
+      ${rows}
+      <div class="form-sep" style="margin:18px 0"></div>
+      <div class="form-lbl-section" style="margin-bottom:10px">Add User</div>
+      <div class="form-grid">
+        <div class="form-field"><label>Name *</label><input type="text" id="uf-name" placeholder="e.g. Khansa"></div>
+        <div class="form-field"><label>Email *</label><input type="email" id="uf-email" placeholder="name@rey.id"></div>
+        <div class="form-field"><label>Password *</label><input type="password" id="uf-password" placeholder="min. 8 characters"></div>
+        <div class="form-field"><label>Role</label>
+          <select id="uf-role">
+            <option value="member">Member</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn-primary" style="margin-top:14px" onclick="saveNewUser()">Create User</button>
+    </div>
+  </div>`;
+}
+
+async function saveNewUser() {
+  const name     = document.getElementById('uf-name')?.value.trim();
+  const email    = document.getElementById('uf-email')?.value.trim();
+  const password = document.getElementById('uf-password')?.value;
+  const role     = document.getElementById('uf-role')?.value || 'member';
+  if (!name || !email || !password) { alert('Name, email, and password are required.'); return; }
+  if (password.length < 8) { alert('Password must be at least 8 characters.'); return; }
+
+  const json = await api('POST', '/users', { name, email, password, role });
+  if (!json || json.error) { alert(json?.error || 'Create failed'); return; }
+  usersList = [...(usersList || []), json.data];
+  renderUsersModal();
+}
+
+async function deleteUserFromModal(id) {
+  if (!confirm('Delete this user? They will no longer be able to sign in.')) return;
+  const json = await api('DELETE', `/users/${id}`);
+  if (!json || json.error) { alert(json?.error || 'Delete failed'); return; }
+  usersList = (usersList || []).filter(u => u.id !== id);
+  renderUsersModal();
+}
+
 /* ── FILTERS ────────────────────────────────────────────── */
 document.querySelectorAll('.filter-btn').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -1210,7 +1488,8 @@ document.querySelectorAll('.filter-btn').forEach(btn => {
 /* ── KEYBOARD ───────────────────────────────────────────── */
 document.addEventListener('keydown', e => {
   if (e.key==='Escape') {
-    if (document.getElementById('revenue-modal')?.classList.contains('open')) closeRevenueModal();
+    if (document.getElementById('users-modal')?.classList.contains('open')) closeUsersModal();
+    else if (document.getElementById('revenue-modal')?.classList.contains('open')) closeRevenueModal();
     else if (document.getElementById('task-card-modal')?.classList.contains('open')) closeTaskCard();
     else if (document.getElementById('project-modal').classList.contains('open')) closeProjectModal();
     else if (currentView==='detail') showList();
@@ -1224,6 +1503,10 @@ document.addEventListener('keydown', e => {
   const user = getCurrentUser();
   const headerSync = document.getElementById('header-sync');
   if (headerSync && user) headerSync.textContent = `${user.name} · ${user.role}`;
+  if (user?.role === 'admin') {
+    const btn = document.getElementById('btn-manage-users');
+    if (btn) btn.style.display = '';
+  }
 
   document.getElementById('live-date').textContent = new Date().toLocaleDateString('en-GB',{
     weekday:'long', day:'numeric', month:'long', year:'numeric',
@@ -1235,7 +1518,7 @@ document.addEventListener('keydown', e => {
     await loadProjects();
   } catch (err) {
     console.error('loadProjects failed:', err);
-    document.getElementById('grid').innerHTML = `<div class="loading-wrap" style="grid-column:1/-1;color:#ff6b6b;font-size:13px">Failed to load projects — ${err.message || 'check connection'}</div>`;
+    document.getElementById('grid').innerHTML = `<div class="loading-wrap" style="grid-column:1/-1;color:#c23b3b;font-size:13px">Failed to load projects — ${err.message || 'check connection'}</div>`;
     return;
   }
   renderStats();
