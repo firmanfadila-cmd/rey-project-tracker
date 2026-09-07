@@ -50,10 +50,30 @@
       <button class="filter-btn" data-filter="platform">Platform</button>
       <button class="filter-btn" data-filter="done">Completed</button>
       <button class="filter-btn filter-btn-live" data-filter="live">Live</button>
+      <div class="client-search-wrap">
+        <input type="text" id="client-search" class="client-search-input" placeholder="Search client..." autocomplete="off">
+      </div>
     </div>
     <div class="grid-wrap">
-      <div class="grid" id="grid">
-        <div class="no-results" id="no-results">No projects match this filter.</div>
+      <div class="table-scroll">
+        <table class="plist">
+          <thead>
+            <tr>
+              <th>Client</th>
+              <th>Project</th>
+              <th>Status</th>
+              <th>Deadline</th>
+              <th>Next</th>
+              <th>PM</th>
+              <th>Revenue</th>
+              <th>Tasks</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="grid">
+            <tr class="no-results" id="no-results"><td colspan="9">No projects match this filter.</td></tr>
+          </tbody>
+        </table>
       </div>
     </div>
     <footer class="footer">

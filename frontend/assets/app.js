@@ -266,7 +266,7 @@ function renderGrid() {
   const grid = document.getElementById('grid');
   const noR  = document.getElementById('no-results');
   if (!grid) return;
-  grid.querySelectorAll('.card, .loading-wrap').forEach(c => c.remove());
+  grid.querySelectorAll('.prow, .loading-wrap').forEach(c => c.remove());
 
   STATE.forEach((p, i) => {
     const prog   = projProgress(p);
@@ -274,71 +274,84 @@ function renderGrid() {
     const tagCls = TAG_CLASS[p.product] || '';
     const isAdmin = getCurrentUser()?.role === 'admin';
 
-    const card = document.createElement('div');
-    card.className = 'card';
-    card.dataset.status   = p.status;
-    card.dataset.category = p.category;
-    card.dataset.live     = p.isLive ? 'true' : 'false';
-    card.style.animationDelay = `${0.05 + i * 0.05}s`;
+    const row = document.createElement('tr');
+    row.className = 'prow';
+    row.dataset.status   = p.status;
+    row.dataset.category = p.category;
+    row.dataset.live     = p.isLive ? 'true' : 'false';
+    row.dataset.client   = (p.client || '').toLowerCase();
+    row.style.animationDelay = `${0.03 + i * 0.03}s`;
 
-    card.innerHTML = `
-      <div class="card-top">
-        <div class="card-identity">
+    row.innerHTML = `
+      <td class="col-client">
+        <div class="row-identity">
           <div class="monogram" style="background:${p.monoColor}">${esc(p.mono||'?')}</div>
           <div><div class="client-name">${esc(p.client)}</div><div class="client-sub">${esc(p.sub||'')}</div></div>
         </div>
-        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+      </td>
+      <td class="col-project">
+        <div class="row-project">${esc(p.project)}</div>
+        <div class="row-tags">
+          <span class="tag ${tagCls}">${esc(p.product||'')}</span>
+          <span class="tag">${esc(p.phase||'—')}</span>
+        </div>
+      </td>
+      <td class="col-status">
+        <div class="col-status-cell">
           ${p.isLive ? `<span class="live-chip">🟢 LIVE</span>` : ''}
           <div class="status-badge badge-${p.status}">
             <div class="status-dot" style="background:${color}"></div>${esc(p.badge)}
           </div>
         </div>
-      </div>
-      <div class="card-project">${esc(p.project)}</div>
-      <div class="card-tags">
-        <span class="tag ${tagCls}">${esc(p.product||'')}</span>
-        <span class="tag">${esc(p.phase||'—')}</span>
-      </div>
-      <div class="divider"></div>
-      <div class="card-row"><span class="row-lbl">DL</span><span class="row-val ${p.urgent?'urgent':''}">${esc(p.deadline||'—')}</span></div>
-      <div class="card-row"><span class="row-lbl">NEXT</span><span class="row-val primary">${esc(p.next||'—')}</span></div>
-      <div class="card-row"><span class="row-lbl">PM</span><span class="row-val">${esc(p.pm||'—')}</span></div>
-      <div class="card-row"><span class="row-lbl">REV</span><span class="row-val revenue">${esc(fmtMoneyDisplay(p.revenue) || '—')}</span></div>
-      <div class="progress-wrap">
-        <div class="progress-header">
-          <span class="progress-lbl">Tasks ${prog.done}/${prog.total}</span>
-          <span class="progress-count">${prog.pct}%</span>
+      </td>
+      <td class="col-deadline ${p.urgent?'urgent':''}">${esc(p.deadline||'—')}</td>
+      <td class="col-next">${esc(p.next||'—')}</td>
+      <td class="col-pm">${esc(p.pm||'—')}</td>
+      <td class="col-revenue">${esc(fmtMoneyDisplay(p.revenue) || '—')}</td>
+      <td class="col-progress">
+        <div class="t-prog-wrap">
+          <div class="t-prog-track"><div class="t-prog-fill" style="width:${prog.pct}%;background:${color}"></div></div>
+          <span class="t-prog-pct">${prog.pct}%</span>
         </div>
-        <div class="progress-track"><div class="progress-fill" style="width:${prog.pct}%;background:${color}"></div></div>
-      </div>
-      ${isAdmin ? `<button class="card-del" title="Delete project">🗑</button>` : ''}`;
+        <div class="row-tasks-lbl">${prog.done}/${prog.total}</div>
+      </td>
+      <td class="col-actions">${isAdmin ? `<button class="card-del" title="Delete project">🗑</button>` : ''}</td>`;
 
-    card.addEventListener('click', () => showDetail(p.id));
+    row.addEventListener('click', () => showDetail(p.id));
     if (isAdmin) {
-      card.querySelector('.card-del').addEventListener('click', e => {
+      row.querySelector('.card-del').addEventListener('click', e => {
         e.stopPropagation();
         deleteProject(p.id);
       });
     }
-    grid.insertBefore(card, noR);
+    grid.insertBefore(row, noR);
   });
 
   applyFilter(activeFilter);
 }
 
+let clientSearch = '';
+
 function applyFilter(f) {
   activeFilter = f;
   const noR = document.getElementById('no-results');
   let vis = 0;
-  document.querySelectorAll('.card').forEach(card => {
-    const show = f==='all' ? true : f==='claims' ? card.dataset.category==='claims'
-      : f==='uw' ? card.dataset.category==='uw' : f==='platform' ? card.dataset.category==='platform'
-      : f==='done' ? card.dataset.status==='done' : f==='live' ? card.dataset.live==='true' : false;
-    card.classList.toggle('hidden', !show);
+  document.querySelectorAll('.prow').forEach(row => {
+    const matchesFilter = f==='all' ? true : f==='claims' ? row.dataset.category==='claims'
+      : f==='uw' ? row.dataset.category==='uw' : f==='platform' ? row.dataset.category==='platform'
+      : f==='done' ? row.dataset.status==='done' : f==='live' ? row.dataset.live==='true' : false;
+    const matchesSearch = !clientSearch || row.dataset.client.includes(clientSearch);
+    const show = matchesFilter && matchesSearch;
+    row.classList.toggle('hidden', !show);
     if (show) vis++;
   });
   if (noR) noR.classList.toggle('visible', vis===0);
 }
+
+document.getElementById('client-search')?.addEventListener('input', e => {
+  clientSearch = e.target.value.trim().toLowerCase();
+  applyFilter(activeFilter);
+});
 
 /* ── VIEW SWITCHING ─────────────────────────────────────── */
 async function showDetail(projectId) {
