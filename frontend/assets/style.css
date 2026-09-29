@@ -139,62 +139,77 @@ body {
   .header,.stats-bar,.filters,.grid-wrap { padding-left: 18px; padding-right: 18px; }
 }
 
-.plist { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 480px; }
+.plist { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 12px; min-width: 960px; }
 .plist thead th {
   padding: 10px 14px; text-align: left; font-size: 9px;
   font-family: 'Space Mono', monospace; color: var(--text-muted);
   text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;
   border-bottom: 1px solid var(--border); background: rgba(13,27,42,0.02);
 }
+.cg-client   { width: 17%; }
+.cg-project  { width: 20%; }
+.cg-status   { width: 11%; }
+.cg-deadline { width: 9%; }
+.cg-next     { width: 14%; }
+.cg-pm       { width: 9%; }
+.cg-revenue  { width: 10%; }
+.cg-tasks    { width: 8%; }
+.cg-actions  { width: 40px; }
+
 .plist tbody tr {
-  position: relative; cursor: pointer;
+  cursor: pointer;
   transition: background 0.18s ease; animation: rowIn 0.4s ease forwards; opacity: 0;
 }
-.plist tbody tr::before { content:''; position:absolute; left:0; top:0; bottom:0; width:3px; }
-.plist tbody tr[data-status="hot"]::before    { background: var(--orange); }
-.plist tbody tr[data-status="active"]::before { background: var(--active); }
-.plist tbody tr[data-status="poc"]::before    { background: var(--poc); }
-.plist tbody tr[data-status="v2"]::before     { background: var(--v2); }
-.plist tbody tr[data-status="done"]::before   { background: var(--done); }
 .plist tbody tr[data-status="done"] { opacity: 0.75; }
 .plist tbody tr:hover { background: var(--surface-h); }
 .plist tbody tr.hidden { display: none; }
-.plist tbody td { padding: 11px 14px; color: var(--text-2); vertical-align: middle; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.plist tbody td { padding: 11px 14px; color: var(--text-2); vertical-align: middle; border-bottom: 1px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .plist tbody tr:last-child td { border-bottom: none; }
 @keyframes rowIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
 
-.row-identity { display: flex; align-items: center; gap: 10px; }
+.row-identity { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .monogram {
   width: 32px; height: 32px; border-radius: 10px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
   font-family: 'Poppins', sans-serif; font-size: 11px; font-weight: 700; color: #fff; letter-spacing: -0.3px;
 }
-.client-name { font-size: 13px; font-weight: 700; color: var(--text-1); letter-spacing: -0.3px; line-height: 1.2; }
-.client-sub  { font-size: 10px; color: var(--text-muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.4px; }
+.client-name { font-size: 13px; font-weight: 700; color: var(--text-1); letter-spacing: -0.3px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; }
+.client-sub  { font-size: 10px; color: var(--text-muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.4px; overflow: hidden; text-overflow: ellipsis; }
+
+.plist tbody td.col-project { white-space: normal; }
+.row-project { font-size: 12px; color: var(--text-2); margin-bottom: 6px; line-height: 1.4; }
+.row-tags    { display: flex; gap: 5px; flex-wrap: wrap; }
 
 .tag { padding: 2px 9px; border-radius: 100px; font-size: 10px; font-weight: 500; background: var(--page-bg); border: 1px solid var(--border); color: var(--text-2); }
 .tag-claims   { background: rgba(77,163,255,0.09);  border-color: rgba(77,163,255,0.25);  color: var(--accent-text); }
 .tag-uw       { background: rgba(181,148,248,0.1); border-color: rgba(181,148,248,0.3); color: var(--v2-text); }
 .tag-platform { background: rgba(45,212,167,0.1);  border-color: rgba(45,212,167,0.3);  color: var(--done-text); }
 
+.col-status-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .status-badge {
   display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 100px;
   font-size: 10px; font-weight: 700; font-family: 'Space Mono', monospace;
   letter-spacing: 0.3px; border: 1px solid; flex-shrink: 0; white-space: nowrap;
 }
-.status-dot { width: 5px; height: 5px; border-radius: 50%; }
+.status-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
 .badge-hot    { color: var(--orange-text); border-color: rgba(245,115,12,0.35); background: rgba(245,115,12,0.1); }
 .badge-active { color: var(--accent-text); border-color: rgba(77,163,255,0.35);  background: rgba(77,163,255,0.09); }
 .badge-poc    { color: var(--poc-text);    border-color: rgba(255,209,102,0.5); background: rgba(255,209,102,0.14); }
 .badge-v2     { color: var(--v2-text);     border-color: rgba(181,148,248,0.4); background: rgba(181,148,248,0.1); }
 .badge-done   { color: var(--done-text);   border-color: rgba(45,212,167,0.4);  background: rgba(45,212,167,0.1); }
+.badge-lost   { color: var(--text-muted);  border-color: var(--border);         background: rgba(13,27,42,0.03); }
 @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.35; } }
 .badge-hot .status-dot { animation: pulse 2s ease-in-out infinite; }
 
+.col-deadline.urgent { color: var(--hot); font-weight: 600; }
+.plist tbody td.col-next { color: var(--text-1); white-space: normal; }
+.col-revenue { color: var(--done-text); font-weight: 600; }
+
 .t-prog-wrap  { display:flex; align-items:center; gap:6px; }
-.t-prog-track { height:4px; flex:1; background:#e7ecf1; border-radius:100px; overflow:hidden; min-width:60px; }
+.t-prog-track { height:4px; flex:1; background:#e7ecf1; border-radius:100px; overflow:hidden; min-width:32px; }
 .t-prog-fill  { height:100%; border-radius:100px; transition: width 1s cubic-bezier(0.4,0,0.2,1); }
 .t-prog-pct   { font-size:10px; color:var(--text-2); font-family:'Space Mono',monospace; width:30px; text-align:right; flex-shrink:0; }
+.row-tasks-lbl { font-size: 9px; font-family: 'Space Mono', monospace; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
 
 .card-del {
   width: 24px; height: 24px; border-radius: 50%;
@@ -331,13 +346,14 @@ tr.drag-over td { box-shadow: inset 0 2px 0 var(--accent); }
 
 /* ── GO LIVE ────────────────────────────────── */
 .live-chip {
-  display:inline-flex; align-items:center; gap:4px;
-  font-size:9px; font-weight:700; letter-spacing:0.3px;
+  display:inline-flex; align-items:center; gap:5px;
+  font-size:9px; font-weight:700; letter-spacing:0.3px; text-transform:uppercase;
   color:var(--done-text); background:rgba(45,212,167,0.14);
   border:none; border-radius:100px;
   padding:4px 9px; font-family:'Space Mono',monospace;
   white-space:nowrap;
 }
+.live-dot { width:5px; height:5px; border-radius:50%; background:var(--done); flex-shrink:0; }
 
 /* ── TASK CARD ATTACHMENTS ──────────────────── */
 .card-attachment-list { display:flex; flex-direction:column; gap:6px; margin-bottom:10px; }

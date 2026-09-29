@@ -57,16 +57,26 @@
     <div class="grid-wrap">
       <div class="table-scroll">
         <table class="plist">
+          <colgroup>
+            <col class="cg-client"><col class="cg-project"><col class="cg-status">
+            <col class="cg-deadline"><col class="cg-next"><col class="cg-pm">
+            <col class="cg-revenue"><col class="cg-tasks"><col class="cg-actions">
+          </colgroup>
           <thead>
             <tr>
               <th>Client</th>
-              <th>Product</th>
+              <th>Project</th>
+              <th>Status</th>
+              <th>Deadline</th>
+              <th>Next</th>
               <th>PM</th>
+              <th>Revenue</th>
+              <th>Tasks</th>
               <th></th>
             </tr>
           </thead>
           <tbody id="grid">
-            <tr class="no-results" id="no-results"><td colspan="4">No projects match this filter.</td></tr>
+            <tr class="no-results" id="no-results"><td colspan="9">No projects match this filter.</td></tr>
           </tbody>
         </table>
       </div>

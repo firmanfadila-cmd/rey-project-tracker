@@ -44,6 +44,7 @@ const TASK_STATUS = {
 const TAG_CLASS = { 'Olvo Claims':'tag-claims','Olvo UW':'tag-uw','Platform':'tag-platform' };
 const CAT_MAP   = { 'Olvo Claims':'claims','Olvo UW':'uw','Platform':'platform','Analytics':'other' };
 const PALETTE   = ['#1565c0','#2e7d32','#6a1b9a','#bf360c','#e65100','#00695c','#1a6eb5','#b71c1c'];
+const ICON_TRASH = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/></svg>`;
 
 /* ── STATE ──────────────────────────────────────────────── */
 let STATE          = [];       // array of project objects (tasks loaded on demand)
@@ -269,7 +270,9 @@ function renderGrid() {
   grid.querySelectorAll('.prow, .loading-wrap').forEach(c => c.remove());
 
   STATE.forEach((p, i) => {
-    const tagCls = TAG_CLASS[p.product] || '';
+    const prog    = projProgress(p);
+    const color   = STATUS_COLOR[p.status] || '#4da3ff';
+    const tagCls  = TAG_CLASS[p.product] || '';
     const isAdmin = getCurrentUser()?.role === 'admin';
 
     const row = document.createElement('tr');
@@ -287,9 +290,33 @@ function renderGrid() {
           <div><div class="client-name">${esc(p.client)}</div><div class="client-sub">${esc(p.sub||'')}</div></div>
         </div>
       </td>
-      <td class="col-product"><span class="tag ${tagCls}">${esc(p.product||'—')}</span></td>
+      <td class="col-project">
+        <div class="row-project">${esc(p.project)}</div>
+        <div class="row-tags">
+          <span class="tag ${tagCls}">${esc(p.product||'')}</span>
+          <span class="tag">${esc(p.phase||'—')}</span>
+        </div>
+      </td>
+      <td class="col-status">
+        <div class="col-status-cell">
+          ${p.isLive ? `<span class="live-chip"><span class="live-dot"></span>Live</span>` : ''}
+          <div class="status-badge badge-${p.status}">
+            <div class="status-dot" style="background:${color}"></div>${esc(p.badge)}
+          </div>
+        </div>
+      </td>
+      <td class="col-deadline ${p.urgent?'urgent':''}">${esc(p.deadline||'—')}</td>
+      <td class="col-next">${esc(p.next||'—')}</td>
       <td class="col-pm">${esc(p.pm||'—')}</td>
-      <td class="col-actions">${isAdmin ? `<button class="card-del" title="Delete project">🗑</button>` : ''}</td>`;
+      <td class="col-revenue">${esc(fmtMoneyDisplay(p.revenue) || '—')}</td>
+      <td class="col-tasks">
+        <div class="t-prog-wrap">
+          <div class="t-prog-track"><div class="t-prog-fill" style="width:${prog.pct}%;background:${color}"></div></div>
+          <span class="t-prog-pct">${prog.pct}%</span>
+        </div>
+        <div class="row-tasks-lbl">${prog.done}/${prog.total}</div>
+      </td>
+      <td class="col-actions">${isAdmin ? `<button class="card-del" title="Delete project">${ICON_TRASH}</button>` : ''}</td>`;
 
     row.addEventListener('click', () => showDetail(p.id));
     if (isAdmin) {
