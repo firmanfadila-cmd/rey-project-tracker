@@ -129,7 +129,7 @@ function autoNumberName(name, tasks, parentId) {
 // Warn (not block) when a subtask's dates fall outside its parent task's
 // plan range — lets the user proceed deliberately rather than silently.
 function validateSubtaskDates(parent, ps, pe) {
-  if (!parent?.planStart || !parent?.planEnd) return true;
+  if (!ps || !pe || !parent?.planStart || !parent?.planEnd) return true;
   const issues = [];
   if (ps < parent.planStart) issues.push(`starts before the parent task's plan start (${fmtFull(parent.planStart)})`);
   if (pe > parent.planEnd)   issues.push(`ends after the parent task's plan end (${fmtFull(parent.planEnd)})`);
@@ -874,9 +874,8 @@ function toggleTimeline() { editingTimeline = !editingTimeline; renderDetail(); 
 async function saveTimeline() {
   const p = getProj(activeProjectId);
   if (!p) return;
-  const ps = document.getElementById('tl-ps')?.value;
-  const pe = document.getElementById('tl-pe')?.value;
-  if (!ps || !pe) { alert('Plan start and plan end are required.'); return; }
+  const ps = document.getElementById('tl-ps')?.value || null;
+  const pe = document.getElementById('tl-pe')?.value || null;
 
   const body = {
     ...buildProjectBody(p),
@@ -1081,8 +1080,8 @@ function buildTaskCard(p, task, isNew) {
 
   html += `<div class="form-grid">
       <div class="form-field form-full"><label>Task Name *</label><input type="text" id="tc-name" value="${esc(t.name)}" placeholder="Task name"></div>
-      <div class="form-field"><label>Plan Start *</label><input type="date" id="tc-ps" value="${t.planStart||''}"></div>
-      <div class="form-field"><label>Plan End *</label><input type="date" id="tc-pe" value="${t.planEnd||''}"></div>
+      <div class="form-field"><label>Plan Start</label><input type="date" id="tc-ps" value="${t.planStart||''}"></div>
+      <div class="form-field"><label>Plan End</label><input type="date" id="tc-pe" value="${t.planEnd||''}"></div>
       <div class="form-field"><label>Actual Start</label><input type="date" id="tc-as" value="${t.actualStart||''}"></div>
       <div class="form-field"><label>Actual End</label><input type="date" id="tc-ae" value="${t.actualEnd||''}"></div>
       <div class="form-field"><label>Progress %</label><input type="number" id="tc-prog" min="0" max="100" value="${t.progress}"></div>
@@ -1108,8 +1107,8 @@ function buildTaskCard(p, task, isNew) {
       html += `<div style="background:rgba(77,163,255,0.04);border:1px solid rgba(77,163,255,0.12);border-radius:12px;padding:14px;margin-top:6px">
         <div class="form-grid">
           <div class="form-field form-full"><label>Subtask Name *</label><input type="text" id="scf-name" placeholder="Subtask name"></div>
-          <div class="form-field"><label>Plan Start *</label><input type="date" id="scf-ps"></div>
-          <div class="form-field"><label>Plan End *</label><input type="date" id="scf-pe"></div>
+          <div class="form-field"><label>Plan Start</label><input type="date" id="scf-ps"></div>
+          <div class="form-field"><label>Plan End</label><input type="date" id="scf-pe"></div>
           <div class="form-field"><label>Actual Start</label><input type="date" id="scf-as"></div>
           <div class="form-field"><label>Actual End</label><input type="date" id="scf-ae"></div>
           <div class="form-field"><label>Progress %</label><input type="number" id="scf-prog" min="0" max="100" value="0"></div>
@@ -1180,7 +1179,7 @@ async function saveTaskCard() {
   const name = document.getElementById('tc-name')?.value.trim() || '';
   const ps   = document.getElementById('tc-ps')?.value || null;
   const pe   = document.getElementById('tc-pe')?.value || null;
-  if (!name || !ps || !pe) { alert('Task name, plan start and plan end are required.'); return; }
+  if (!name) { alert('Task name is required.'); return; }
 
   const body = {
     name,
@@ -1227,7 +1226,7 @@ async function saveSubtaskInCard() {
   const name = document.getElementById('scf-name')?.value.trim() || '';
   const ps   = document.getElementById('scf-ps')?.value || null;
   const pe   = document.getElementById('scf-pe')?.value || null;
-  if (!name || !ps || !pe) { alert('Subtask name, plan start and plan end are required.'); return; }
+  if (!name) { alert('Subtask name is required.'); return; }
 
   const p      = getProj(activeProjectId);
   const parent = p?.tasks.find(t => t.id === openTaskId);
@@ -1360,9 +1359,9 @@ function closeProjectModal() {
 async function submitNewProject() {
   const client  = document.getElementById('pf-client')?.value.trim();
   const project = document.getElementById('pf-project')?.value.trim();
-  const ps      = document.getElementById('pf-plan-start')?.value;
-  const pe      = document.getElementById('pf-plan-end')?.value;
-  if (!client || !project || !ps || !pe) { alert('Client name, project title, plan start and plan end are required.'); return; }
+  const ps      = document.getElementById('pf-plan-start')?.value || null;
+  const pe      = document.getElementById('pf-plan-end')?.value || null;
+  if (!client || !project) { alert('Client name and project title are required.'); return; }
 
   const product  = document.getElementById('pf-product')?.value  || 'Olvo Claims';
   const status   = document.getElementById('pf-status')?.value   || 'active';
