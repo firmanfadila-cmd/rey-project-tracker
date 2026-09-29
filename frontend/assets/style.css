@@ -139,7 +139,7 @@ body {
   .header,.stats-bar,.filters,.grid-wrap { padding-left: 18px; padding-right: 18px; }
 }
 
-.plist { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 1020px; }
+.plist { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 480px; }
 .plist thead th {
   padding: 10px 14px; text-align: left; font-size: 9px;
   font-family: 'Space Mono', monospace; color: var(--text-muted);
@@ -172,9 +172,6 @@ body {
 .client-name { font-size: 13px; font-weight: 700; color: var(--text-1); letter-spacing: -0.3px; line-height: 1.2; }
 .client-sub  { font-size: 10px; color: var(--text-muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.4px; }
 
-.plist tbody td.col-project { max-width: 220px; white-space: normal; }
-.row-project      { font-size: 12px; color: var(--text-2); margin-bottom: 6px; line-height: 1.4; }
-.row-tags         { display: flex; gap: 5px; flex-wrap: wrap; }
 .tag { padding: 2px 9px; border-radius: 100px; font-size: 10px; font-weight: 500; background: var(--page-bg); border: 1px solid var(--border); color: var(--text-2); }
 .tag-claims   { background: rgba(77,163,255,0.09);  border-color: rgba(77,163,255,0.25);  color: var(--accent-text); }
 .tag-uw       { background: rgba(181,148,248,0.1); border-color: rgba(181,148,248,0.3); color: var(--v2-text); }
@@ -194,17 +191,10 @@ body {
 @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.35; } }
 .badge-hot .status-dot { animation: pulse 2s ease-in-out infinite; }
 
-.col-status-cell { display: flex; align-items: center; gap: 6px; }
-.col-deadline.urgent { color: var(--hot); font-weight: 600; }
-.plist tbody td.col-next { color: var(--text-1); max-width: 240px; white-space: normal; }
-.col-revenue { color: var(--done-text); font-weight: 600; }
-
-.col-progress    { min-width: 110px; }
 .t-prog-wrap  { display:flex; align-items:center; gap:6px; }
 .t-prog-track { height:4px; flex:1; background:#e7ecf1; border-radius:100px; overflow:hidden; min-width:60px; }
 .t-prog-fill  { height:100%; border-radius:100px; transition: width 1s cubic-bezier(0.4,0,0.2,1); }
 .t-prog-pct   { font-size:10px; color:var(--text-2); font-family:'Space Mono',monospace; width:30px; text-align:right; flex-shrink:0; }
-.row-tasks-lbl { font-size: 9px; font-family: 'Space Mono', monospace; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
 
 .card-del {
   width: 24px; height: 24px; border-radius: 50%;

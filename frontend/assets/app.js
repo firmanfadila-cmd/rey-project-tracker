@@ -269,8 +269,6 @@ function renderGrid() {
   grid.querySelectorAll('.prow, .loading-wrap').forEach(c => c.remove());
 
   STATE.forEach((p, i) => {
-    const prog   = projProgress(p);
-    const color  = STATUS_COLOR[p.status] || '#4da3ff';
     const tagCls = TAG_CLASS[p.product] || '';
     const isAdmin = getCurrentUser()?.role === 'admin';
 
@@ -289,32 +287,8 @@ function renderGrid() {
           <div><div class="client-name">${esc(p.client)}</div><div class="client-sub">${esc(p.sub||'')}</div></div>
         </div>
       </td>
-      <td class="col-project">
-        <div class="row-project">${esc(p.project)}</div>
-        <div class="row-tags">
-          <span class="tag ${tagCls}">${esc(p.product||'')}</span>
-          <span class="tag">${esc(p.phase||'—')}</span>
-        </div>
-      </td>
-      <td class="col-status">
-        <div class="col-status-cell">
-          ${p.isLive ? `<span class="live-chip">🟢 LIVE</span>` : ''}
-          <div class="status-badge badge-${p.status}">
-            <div class="status-dot" style="background:${color}"></div>${esc(p.badge)}
-          </div>
-        </div>
-      </td>
-      <td class="col-deadline ${p.urgent?'urgent':''}">${esc(p.deadline||'—')}</td>
-      <td class="col-next">${esc(p.next||'—')}</td>
+      <td class="col-product"><span class="tag ${tagCls}">${esc(p.product||'—')}</span></td>
       <td class="col-pm">${esc(p.pm||'—')}</td>
-      <td class="col-revenue">${esc(fmtMoneyDisplay(p.revenue) || '—')}</td>
-      <td class="col-progress">
-        <div class="t-prog-wrap">
-          <div class="t-prog-track"><div class="t-prog-fill" style="width:${prog.pct}%;background:${color}"></div></div>
-          <span class="t-prog-pct">${prog.pct}%</span>
-        </div>
-        <div class="row-tasks-lbl">${prog.done}/${prog.total}</div>
-      </td>
       <td class="col-actions">${isAdmin ? `<button class="card-del" title="Delete project">🗑</button>` : ''}</td>`;
 
     row.addEventListener('click', () => showDetail(p.id));
