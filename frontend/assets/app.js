@@ -46,6 +46,9 @@ const CAT_MAP   = { 'Olvo Claims':'claims','Olvo UW':'uw','Platform':'platform',
 const PALETTE   = ['#1565c0','#2e7d32','#6a1b9a','#bf360c','#e65100','#00695c','#1a6eb5','#b71c1c'];
 const ICON_TRASH = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/></svg>`;
 const ICON_COMMENT = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>`;
+const ICON_PAPERCLIP = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.4 12.3 20.5a5 5 0 0 1-7.1-7.1l9-9a3.5 3.5 0 0 1 5 5l-9 9a2 2 0 0 1-2.8-2.8l8.1-8.1"/></svg>`;
+const ICON_LINK = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><path d="M8 12h8"/></svg>`;
+const ICON_FILE = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>`;
 
 /* ── STATE ──────────────────────────────────────────────── */
 let STATE          = [];       // array of project objects (tasks loaded on demand)
@@ -60,6 +63,7 @@ let revenueEntryEditing = null;  // the revenue row being edited, or null when a
 let activeFilter        = 'all';
 let openIssueId         = null;  // issue id shown in the issue modal; 'new' = creating; null = closed
 let issueComments       = [];    // comments loaded for the currently open issue
+let pendingCommentFile  = null;  // File selected for the comment being composed, before it's posted
 
 /* ── HELPERS ────────────────────────────────────────────── */
 function getProj(id) { return STATE.find(p => p.id === id); }
@@ -1510,15 +1514,27 @@ function buildIssueModal(p, issue, isNew) {
       html += `<div class="task-empty" style="padding:16px 0">No comments yet.</div>`;
     } else {
       issueComments.forEach(c => {
+        const atts = c.attachments || [];
         html += `<div class="issue-comment">
           <div class="issue-comment-hdr"><span class="issue-comment-author">${esc(c.author_name||'Unknown')}</span><span class="issue-comment-date">${fmtFull(c.created_at ? c.created_at.slice(0,10) : null)}</span></div>
           <div class="issue-comment-body">${esc(c.body)}</div>
+          ${atts.length ? `<div class="issue-comment-attachments">` + atts.map(a =>
+            a.kind === 'link'
+              ? `<a class="issue-attachment-chip" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer">${ICON_LINK}${esc(a.label || a.url)}</a>`
+              : `<a class="issue-attachment-chip" href="#" onclick="downloadIssueCommentFile(event,'${a.id}','${esc(a.filename)}')">${ICON_FILE}${esc(a.filename)} <span class="issue-attachment-size">${fmtBytes(a.size_bytes)}</span></a>`
+          ).join('') + `</div>` : ''}
         </div>`;
       });
     }
     html += `</div>
       <div class="form-field form-full" style="margin-top:12px"><textarea id="is-comment" placeholder="Write a comment..."></textarea></div>
-      <div style="display:flex;justify-content:flex-end">
+      <div class="issue-compose-attach">
+        <input type="file" id="is-comment-file" style="display:none" onchange="handleCommentFileSelected(event)">
+        <button class="btn-ghost" style="padding:5px 11px;font-size:11.5px" onclick="document.getElementById('is-comment-file').click()">${ICON_PAPERCLIP} Attach file</button>
+        ${pendingCommentFile ? `<span class="issue-pending-file">${ICON_FILE}${esc(pendingCommentFile.name)} <button class="btn-icon" style="width:18px;height:18px;font-size:10px" onclick="clearPendingCommentFile()">×</button></span>` : ''}
+        <input type="text" id="is-comment-link" class="issue-link-input" placeholder="Paste a Google Drive link (optional)">
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:10px">
         <button class="btn-primary" style="padding:6px 14px;font-size:12px" onclick="submitIssueComment()">Add Comment</button>
       </div>`;
   }
@@ -1589,14 +1605,90 @@ async function deleteIssueConfirm(id) {
   renderDetail();
 }
 
+// Re-rendering the modal wipes the DOM (and anything typed into plain
+// inputs with it), so the in-progress comment draft must be carried
+// across the rebuild explicitly.
+function reRenderIssueModalPreservingDraft() {
+  const body = document.getElementById('is-comment')?.value || '';
+  const link = document.getElementById('is-comment-link')?.value || '';
+  renderIssueModal();
+  const bodyEl = document.getElementById('is-comment');
+  const linkEl = document.getElementById('is-comment-link');
+  if (bodyEl) bodyEl.value = body;
+  if (linkEl) linkEl.value = link;
+}
+
+function handleCommentFileSelected(e) {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  if (file.size > 15 * 1024 * 1024) { alert('File too large — max 15MB.'); return; }
+  pendingCommentFile = file;
+  reRenderIssueModalPreservingDraft();
+}
+
+function clearPendingCommentFile() {
+  pendingCommentFile = null;
+  reRenderIssueModalPreservingDraft();
+}
+
+async function uploadCommentFile(commentId, file) {
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch(`/api/attachments/issue-comments/${commentId}`, {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + getToken() },
+    body: fd,
+  });
+  if (res.status === 401) { logout(); return null; }
+  const json = await res.json();
+  return (json && !json.error) ? json.data : null;
+}
+
+async function downloadIssueCommentFile(e, id, filename) {
+  e.preventDefault();
+  let res;
+  try {
+    res = await fetch(`/api/attachments/issue-comment-file/${id}/download`, {
+      headers: { 'Authorization': 'Bearer ' + getToken() },
+    });
+  } catch (err) {
+    alert('Network error — check connection');
+    return;
+  }
+  if (res.status === 401) { logout(); return; }
+  if (!res.ok) { alert('Download failed'); return; }
+  const blob = await res.blob();
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
 async function submitIssueComment() {
   const body = document.getElementById('is-comment')?.value.trim();
+  const linkUrl = document.getElementById('is-comment-link')?.value.trim();
   if (!body) return;
+  if (linkUrl && !/^https?:\/\//i.test(linkUrl)) { alert('Link must start with http:// or https://'); return; }
 
   const json = await api('POST', `/issues/${openIssueId}/comments`, { body });
   if (!json || json.error) { alert(json?.error || 'Comment failed'); return; }
 
-  issueComments.push(json.data);
+  const comment = json.data;
+  comment.attachments = comment.attachments || [];
+
+  if (pendingCommentFile) {
+    const att = await uploadCommentFile(comment.id, pendingCommentFile);
+    if (att) comment.attachments.push(att);
+    pendingCommentFile = null;
+  }
+  if (linkUrl) {
+    const linkJson = await api('POST', `/attachments/issue-comments/${comment.id}/link`, { url: linkUrl });
+    if (linkJson && !linkJson.error) comment.attachments.push(linkJson.data);
+  }
+
+  issueComments.push(comment);
   const p = getProj(activeProjectId);
   const issue = p?.issues?.find(i => i.id === openIssueId);
   if (issue) issue.comment_count = (issue.comment_count || 0) + 1;
