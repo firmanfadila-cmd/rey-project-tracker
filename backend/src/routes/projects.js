@@ -7,7 +7,11 @@ router.use(requireAuth);
 router.get('/', async (req, res) => {
   try {
     const { rows } = await pool.query(
-      'SELECT * FROM projects ORDER BY updated_at DESC'
+      `SELECT p.*,
+        (SELECT count(*) FROM issues i
+         WHERE i.project_id = p.id AND i.status IN ('Open','In Progress'))::int AS open_issues_count
+       FROM projects p
+       ORDER BY p.updated_at DESC`
     );
     res.json({ data: rows, error: null });
   } catch (err) {
@@ -109,6 +113,45 @@ router.post('/:id/tasks', async (req, res) => {
        plan_start||null, plan_end||null, actual_start||null, actual_end||null, remarks||null, parent_id||null]
     );
     res.status(201).json({ data: rows[0], error: null });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ data: null, error: 'Server error' });
+  }
+});
+
+router.get('/:id/issues', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT i.*, u.name AS reporter_name,
+        (SELECT count(*) FROM issue_comments c WHERE c.issue_id = i.id)::int AS comment_count
+       FROM issues i
+       LEFT JOIN users u ON u.id = i.reporter
+       WHERE i.project_id=$1
+       ORDER BY i.created_at DESC`,
+      [req.params.id]
+    );
+    res.json({ data: rows, error: null });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ data: null, error: 'Server error' });
+  }
+});
+
+router.post('/:id/issues', async (req, res) => {
+  const { title, description } = req.body;
+  if (!title) return res.status(400).json({ data: null, error: 'title is required' });
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO issues (project_id, title, description, status, reporter)
+       VALUES ($1,$2,$3,'Open',$4) RETURNING *`,
+      [req.params.id, title, description || null, req.user.id]
+    );
+    const { rows: withReporter } = await pool.query(
+      `SELECT i.*, u.name AS reporter_name, 0 AS comment_count
+       FROM issues i LEFT JOIN users u ON u.id=i.reporter WHERE i.id=$1`,
+      [rows[0].id]
+    );
+    res.status(201).json({ data: withReporter[0], error: null });
   } catch (err) {
     console.error(err);
     res.status(500).json({ data: null, error: 'Server error' });

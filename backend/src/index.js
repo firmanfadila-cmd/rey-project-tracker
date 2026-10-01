@@ -19,6 +19,7 @@ app.use('/api/tasks',       require('./routes/tasks'));
 app.use('/api/attachments', require('./routes/attachments'));
 app.use('/api/revenue',     require('./routes/revenue'));
 app.use('/api/users',       require('./routes/users'));
+app.use('/api/issues',      require('./routes/issues'));
 
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../../frontend/index.html'));

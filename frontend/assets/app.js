@@ -45,6 +45,7 @@ const TAG_CLASS = { 'Olvo Claims':'tag-claims','Olvo UW':'tag-uw','Platform':'ta
 const CAT_MAP   = { 'Olvo Claims':'claims','Olvo UW':'uw','Platform':'platform','Analytics':'other' };
 const PALETTE   = ['#1565c0','#2e7d32','#6a1b9a','#bf360c','#e65100','#00695c','#1a6eb5','#b71c1c'];
 const ICON_TRASH = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/></svg>`;
+const ICON_COMMENT = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>`;
 
 /* ── STATE ──────────────────────────────────────────────── */
 let STATE          = [];       // array of project objects (tasks loaded on demand)
@@ -57,6 +58,8 @@ let cardAddingSubtask   = false; // inline "add subtask" mini-form open within t
 let revenueModalOpen    = false;
 let revenueEntryEditing = null;  // the revenue row being edited, or null when adding a new month
 let activeFilter        = 'all';
+let openIssueId         = null;  // issue id shown in the issue modal; 'new' = creating; null = closed
+let issueComments       = [];    // comments loaded for the currently open issue
 
 /* ── HELPERS ────────────────────────────────────────────── */
 function getProj(id) { return STATE.find(p => p.id === id); }
@@ -242,6 +245,11 @@ async function loadRevenue(projectId) {
   return (json && !json.error) ? json.data : [];
 }
 
+async function loadIssuesForProject(projectId) {
+  const json = await api('GET', `/projects/${projectId}/issues`);
+  return (json && !json.error) ? json.data : [];
+}
+
 /* ── STATS BAR ──────────────────────────────────────────── */
 function renderStats() {
   const bar = document.getElementById('stats-bar');
@@ -303,6 +311,7 @@ function renderGrid() {
           <div class="status-badge badge-${p.status}">
             <div class="status-dot" style="background:${color}"></div>${esc(p.badge)}
           </div>
+          ${p.open_issues_count ? `<span class="issue-count-pill" title="${p.open_issues_count} open issue${p.open_issues_count>1?'s':''}">${ICON_COMMENT}${p.open_issues_count}</span>` : ''}
         </div>
       </td>
       <td class="col-deadline ${p.urgent?'urgent':''}">${esc(p.deadline||'—')}</td>
@@ -363,6 +372,7 @@ async function showDetail(projectId) {
   cardAddingSubtask = false;
   revenueModalOpen  = false;
   revenueEntryEditing = null;
+  openIssueId       = null;
   currentView      = 'detail';
   document.getElementById('view-list').style.display   = 'none';
   document.getElementById('view-detail').style.display = 'block';
@@ -376,9 +386,14 @@ async function showDetail(projectId) {
     p.revenueEntries = await loadRevenue(projectId);
     p._revenueLoaded = true;
   }
+  if (p && !p._issuesLoaded) {
+    p.issues = await loadIssuesForProject(projectId);
+    p._issuesLoaded = true;
+  }
   renderDetail();
   renderTaskCardModal();
   renderRevenueModal();
+  renderIssueModal();
   window.scrollTo(0, 0);
 }
 
@@ -561,6 +576,46 @@ function buildDetail(p) {
     </div>`;
   }
 
+  html += buildIssuesSection(p);
+
+  html += `</div>`;
+  return html;
+}
+
+/* ── ISSUES ─────────────────────────────────────────────── */
+const ISSUE_STATUSES = ['Open', 'In Progress', 'Resolved', 'Closed'];
+const ISSUE_BADGE_CLASS = {
+  'Open': 'issue-badge-open',
+  'In Progress': 'issue-badge-progress',
+  'Resolved': 'issue-badge-resolved',
+  'Closed': 'issue-badge-closed',
+};
+
+function buildIssuesSection(p) {
+  const issues = p.issues || [];
+  let html = `<div class="det-section">
+    <div class="det-section-hdr"><div class="det-section-title">Issues (${issues.length})</div></div>`;
+
+  if (issues.length > 0) {
+    html += `<div class="issue-list">`;
+    issues.forEach(i => {
+      html += `<div class="issue-row" onclick="openIssueModal('${i.id}')">
+        <div class="issue-row-main">
+          <div class="issue-row-title">${esc(i.title)}</div>
+          <div class="issue-row-meta">Reported by ${esc(i.reporter_name || 'Unknown')} · ${fmtFull(i.created_at ? i.created_at.slice(0,10) : null)}</div>
+        </div>
+        <div class="issue-row-side">
+          <span class="issue-badge ${ISSUE_BADGE_CLASS[i.status] || 'issue-badge-open'}">${esc(i.status)}</span>
+          <span class="issue-comment-count" title="Comments">${ICON_COMMENT}${i.comment_count || 0}</span>
+        </div>
+      </div>`;
+    });
+    html += `</div>`;
+  } else {
+    html += `<div class="task-empty">No issues yet.</div>`;
+  }
+
+  html += `<button class="btn-add-task" onclick="openIssueModal('new')">+ New Issue</button>`;
   html += `</div>`;
   return html;
 }
@@ -1393,6 +1448,160 @@ async function submitNewProject() {
   renderStats();
   renderGrid();
   closeProjectModal();
+}
+
+/* ── ISSUE MODAL ────────────────────────────────────────── */
+async function openIssueModal(id) {
+  openIssueId = id;
+  issueComments = [];
+  renderIssueModal();
+  if (id !== 'new') {
+    const json = await api('GET', `/issues/${id}/comments`);
+    issueComments = (json && !json.error) ? json.data : [];
+    renderIssueModal();
+  }
+}
+
+function closeIssueModal() {
+  openIssueId = null;
+  issueComments = [];
+  renderIssueModal();
+}
+
+function renderIssueModal() {
+  const el = document.getElementById('issue-modal');
+  if (!el) return;
+  if (!openIssueId) { el.classList.remove('open'); el.innerHTML = ''; return; }
+
+  const p = getProj(activeProjectId);
+  const isNew = openIssueId === 'new';
+  const issue = isNew ? null : p?.issues?.find(i => i.id === openIssueId);
+  if (!isNew && !issue) { openIssueId = null; el.classList.remove('open'); el.innerHTML = ''; return; }
+
+  el.innerHTML = buildIssueModal(p, issue, isNew);
+  el.classList.add('open');
+}
+
+function buildIssueModal(p, issue, isNew) {
+  const isAdmin = getCurrentUser()?.role === 'admin';
+  const statusOpts = ISSUE_STATUSES.map(s =>
+    `<option value="${s}"${issue?.status===s?' selected':''}>${s}</option>`).join('');
+
+  let html = `
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">${isNew ? 'New Issue' : 'Issue'}</div>
+        <button class="btn-icon" onclick="closeIssueModal()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="form-field form-full"><label>Title *</label><input type="text" id="is-title" value="${isNew?'':esc(issue.title)}" placeholder="Short summary of the issue"></div>
+          <div class="form-field form-full"><label>Description</label><textarea id="is-desc" placeholder="Details, steps to reproduce, context...">${isNew?'':esc(issue.description||'')}</textarea></div>
+          ${!isNew ? `
+          <div class="form-field"><label>Status</label><select id="is-status">${statusOpts}</select></div>
+          <div class="form-field"><label>Reported by</label><div style="padding-top:8px;color:var(--text-2)">${esc(issue.reporter_name||'Unknown')}</div></div>` : ''}
+        </div>`;
+
+  if (!isNew) {
+    html += `<div class="det-sep" style="margin:18px 0;border-top:1px solid var(--border)"></div>
+      <div class="det-section-title" style="margin-bottom:10px">Comments (${issueComments.length})</div>
+      <div class="issue-comment-list">`;
+    if (issueComments.length === 0) {
+      html += `<div class="task-empty" style="padding:16px 0">No comments yet.</div>`;
+    } else {
+      issueComments.forEach(c => {
+        html += `<div class="issue-comment">
+          <div class="issue-comment-hdr"><span class="issue-comment-author">${esc(c.author_name||'Unknown')}</span><span class="issue-comment-date">${fmtFull(c.created_at ? c.created_at.slice(0,10) : null)}</span></div>
+          <div class="issue-comment-body">${esc(c.body)}</div>
+        </div>`;
+      });
+    }
+    html += `</div>
+      <div class="form-field form-full" style="margin-top:12px"><textarea id="is-comment" placeholder="Write a comment..."></textarea></div>
+      <div style="display:flex;justify-content:flex-end">
+        <button class="btn-primary" style="padding:6px 14px;font-size:12px" onclick="submitIssueComment()">Add Comment</button>
+      </div>`;
+  }
+
+  html += `</div>
+      <div class="modal-footer">
+        ${(!isNew && isAdmin) ? `<button class="btn-ghost" style="color:var(--hot);border-color:rgba(194,59,59,0.3);margin-right:auto" onclick="deleteIssueConfirm('${issue.id}')">Delete</button>` : ''}
+        <button class="btn-ghost" onclick="closeIssueModal()">Cancel</button>
+        <button class="btn-primary" onclick="${isNew ? 'submitNewIssue()' : 'saveIssue()'}">${isNew ? 'Create Issue' : 'Save Changes'}</button>
+      </div>
+    </div>`;
+  return html;
+}
+
+async function submitNewIssue() {
+  const title = document.getElementById('is-title')?.value.trim();
+  const description = document.getElementById('is-desc')?.value.trim();
+  if (!title) { alert('Title is required.'); return; }
+
+  const json = await api('POST', `/projects/${activeProjectId}/issues`, { title, description: description || null });
+  if (!json || json.error) { alert(json?.error || 'Create failed'); return; }
+
+  const p = getProj(activeProjectId);
+  if (p) {
+    p.issues = p.issues || [];
+    p.issues.unshift(json.data);
+    p.open_issues_count = (p.open_issues_count || 0) + 1;
+  }
+  closeIssueModal();
+  renderGrid();
+  renderDetail();
+  renderIssueModal();
+}
+
+async function saveIssue() {
+  const title = document.getElementById('is-title')?.value.trim();
+  const description = document.getElementById('is-desc')?.value.trim();
+  const status = document.getElementById('is-status')?.value;
+  if (!title) { alert('Title is required.'); return; }
+
+  const json = await api('PUT', `/issues/${openIssueId}`, { title, description: description || null, status });
+  if (!json || json.error) { alert(json?.error || 'Save failed'); return; }
+
+  const p = getProj(activeProjectId);
+  if (p) {
+    const idx = p.issues.findIndex(i => i.id === openIssueId);
+    if (idx !== -1) p.issues[idx] = { ...p.issues[idx], ...json.data };
+    p.open_issues_count = p.issues.filter(i => i.status === 'Open' || i.status === 'In Progress').length;
+  }
+  closeIssueModal();
+  renderGrid();
+  renderDetail();
+  renderIssueModal();
+}
+
+async function deleteIssueConfirm(id) {
+  if (!confirm('Delete this issue? This also deletes its comments.')) return;
+  const json = await api('DELETE', `/issues/${id}`);
+  if (!json || json.error) { alert(json?.error || 'Delete failed'); return; }
+
+  const p = getProj(activeProjectId);
+  if (p) {
+    p.issues = (p.issues || []).filter(i => i.id !== id);
+    p.open_issues_count = p.issues.filter(i => i.status === 'Open' || i.status === 'In Progress').length;
+  }
+  closeIssueModal();
+  renderGrid();
+  renderDetail();
+}
+
+async function submitIssueComment() {
+  const body = document.getElementById('is-comment')?.value.trim();
+  if (!body) return;
+
+  const json = await api('POST', `/issues/${openIssueId}/comments`, { body });
+  if (!json || json.error) { alert(json?.error || 'Comment failed'); return; }
+
+  issueComments.push(json.data);
+  const p = getProj(activeProjectId);
+  const issue = p?.issues?.find(i => i.id === openIssueId);
+  if (issue) issue.comment_count = (issue.comment_count || 0) + 1;
+  renderDetail();
+  renderIssueModal();
 }
 
 /* ── MANAGE USERS ───────────────────────────────────────── */
