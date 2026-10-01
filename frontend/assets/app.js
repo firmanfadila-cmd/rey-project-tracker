@@ -64,6 +64,8 @@ let activeFilter        = 'all';
 let openIssueId         = null;  // issue id shown in the issue modal; 'new' = creating; null = closed
 let issueComments       = [];    // comments loaded for the currently open issue
 let pendingCommentFile  = null;  // File selected for the comment being composed, before it's posted
+let notifications       = [];    // current user's notifications, newest first
+let notifPanelOpen      = false;
 
 /* ── HELPERS ────────────────────────────────────────────── */
 function getProj(id) { return STATE.find(p => p.id === id); }
@@ -1484,6 +1486,7 @@ function renderIssueModal() {
 
   el.innerHTML = buildIssueModal(p, issue, isNew);
   el.classList.add('open');
+  attachMentionSupport('is-comment', 'is-comment-mention-dd');
 }
 
 function buildIssueModal(p, issue, isNew) {
@@ -1696,6 +1699,82 @@ async function submitIssueComment() {
   renderIssueModal();
 }
 
+/* ── NOTIFICATIONS ──────────────────────────────────────── */
+async function loadNotifications() {
+  const json = await api('GET', '/notifications');
+  notifications = (json && !json.error) ? json.data : [];
+  updateNotifBadge();
+}
+
+function updateNotifBadge() {
+  const badge = document.getElementById('notif-badge');
+  if (!badge) return;
+  const unread = notifications.filter(n => !n.read).length;
+  badge.textContent = unread > 9 ? '9+' : String(unread);
+  badge.style.display = unread > 0 ? '' : 'none';
+}
+
+function toggleNotificationsPanel() {
+  notifPanelOpen = !notifPanelOpen;
+  if (notifPanelOpen) loadNotifications().then(renderNotificationsPanel);
+  renderNotificationsPanel();
+}
+
+function renderNotificationsPanel() {
+  const el = document.getElementById('notifications-panel');
+  if (!el) return;
+  if (!notifPanelOpen) { el.classList.remove('open'); el.innerHTML = ''; return; }
+
+  let html = `<div class="notif-panel-hdr">
+    <span>Notifications</span>
+    ${notifications.some(n => !n.read) ? `<button class="notif-mark-all" onclick="markAllNotificationsRead()">Mark all read</button>` : ''}
+  </div>`;
+
+  if (!notifications.length) {
+    html += `<div class="task-empty" style="padding:24px 16px">No notifications yet.</div>`;
+  } else {
+    html += `<div class="notif-list">` + notifications.map((n, i) => `
+      <div class="notif-item ${n.read ? '' : 'unread'}" onclick="openNotificationFromPanel(${i})">
+        <div class="notif-item-text"><strong>${esc(n.actor_name || 'Someone')}</strong> mentioned you in <strong>${esc(n.issue_title || 'an issue')}</strong></div>
+        <div class="notif-item-meta">${esc(n.project_client || '')} — ${esc(n.project_name || '')} · ${fmtFull(n.created_at ? n.created_at.slice(0,10) : null)}</div>
+      </div>`).join('') + `</div>`;
+  }
+
+  el.innerHTML = html;
+  el.classList.add('open');
+}
+
+async function markAllNotificationsRead() {
+  await api('POST', '/notifications/read-all');
+  notifications.forEach(n => n.read = true);
+  updateNotifBadge();
+  renderNotificationsPanel();
+}
+
+async function openNotificationFromPanel(i) {
+  const n = notifications[i];
+  if (!n) return;
+  if (!n.read) {
+    await api('POST', `/notifications/${n.id}/read`);
+    n.read = true;
+    updateNotifBadge();
+  }
+  notifPanelOpen = false;
+  renderNotificationsPanel();
+  if (!n.project_id || !n.issue_id) return;
+
+  if (!getProj(n.project_id)) await loadProjects();
+  await showDetail(n.project_id);
+  openIssueModal(n.issue_id);
+}
+
+document.addEventListener('click', e => {
+  if (!notifPanelOpen) return;
+  if (e.target.closest('.notif-wrap')) return;
+  notifPanelOpen = false;
+  renderNotificationsPanel();
+});
+
 /* ── MANAGE USERS ───────────────────────────────────────── */
 let usersModalOpen = false;
 let usersList       = null;   // cached list, loaded on open
@@ -1837,4 +1916,5 @@ document.addEventListener('keydown', e => {
   }
   renderStats();
   renderGrid();
+  loadNotifications();
 })();
