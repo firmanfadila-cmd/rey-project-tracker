@@ -89,6 +89,43 @@ body {
 }
 .btn-logout:hover { border-color: rgba(194,59,59,0.4); color: var(--hot); }
 
+/* ── NOTIFICATIONS ─────────────────────────────── */
+.notif-wrap { position: relative; }
+.notif-bell {
+  position: relative; width: 32px; height: 32px; border-radius: 10px;
+  border: 1px solid var(--border); background: transparent; color: var(--text-2);
+  display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.18s;
+}
+.notif-bell:hover { border-color: var(--border-h); color: var(--accent-text); background: rgba(77,163,255,0.06); }
+.notif-badge {
+  position: absolute; top: -4px; right: -4px; min-width: 15px; height: 15px; padding: 0 3px;
+  border-radius: 100px; background: var(--hot); color: #fff;
+  font-size: 9px; font-weight: 700; font-family: 'Space Mono', monospace;
+  display: flex; align-items: center; justify-content: center; line-height: 1;
+}
+.notifications-panel {
+  display: none; position: absolute; top: calc(100% + 8px); right: 0; width: 320px; max-height: 420px;
+  overflow-y: auto; background: #ffffff; border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: 0 12px 28px rgba(13,27,42,0.14); z-index: 60;
+}
+.notifications-panel.open { display: block; }
+.notif-panel-hdr {
+  display: flex; align-items: center; justify-content: space-between; padding: 12px 14px;
+  border-bottom: 1px solid var(--border); font-size: 12.5px; font-weight: 700; color: var(--text-1);
+  position: sticky; top: 0; background: #ffffff;
+}
+.notif-mark-all {
+  border: none; background: none; color: var(--accent-text); font-size: 11px; font-weight: 600; cursor: pointer;
+}
+.notif-list { display: flex; flex-direction: column; }
+.notif-item { padding: 11px 14px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.15s; }
+.notif-item:last-child { border-bottom: none; }
+.notif-item:hover { background: var(--surface-h); }
+.notif-item.unread { background: rgba(77,163,255,0.05); }
+.notif-item.unread::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-right: 6px; vertical-align: middle; }
+.notif-item-text { font-size: 12.5px; color: var(--text-1); line-height: 1.4; }
+.notif-item-meta { font-size: 10.5px; color: var(--text-muted); margin-top: 3px; }
+
 /* ── STATS BAR ───────────────────────────────── */
 .stats-bar {
   display: flex; gap: 10px; padding: 16px 40px;
@@ -396,7 +433,12 @@ tr.drag-over td { box-shadow: inset 0 2px 0 var(--accent); }
 
 /* ── MENTION AUTOCOMPLETE ────────────────────── */
 .mention-dropdown {
-  position: absolute; z-index: 10; left: 0; right: 0; margin-top: 2px;
+  /* Explicit top anchors this below the textarea even when the positioned
+     parent (.form-field) is a flex container — absolute children of a flex
+     box resolve their static position to the container's start edge, not
+     after the preceding sibling, so without this the dropdown covers the
+     textarea instead of sitting below it. */
+  position: absolute; top: 100%; z-index: 10; left: 0; right: 0; margin-top: 2px;
   background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
   box-shadow: 0 8px 20px rgba(13,27,42,0.12); max-height: 160px; overflow-y: auto;
 }

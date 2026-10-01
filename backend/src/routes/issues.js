@@ -67,6 +67,22 @@ router.get('/:id/comments', async (req, res) => {
   }
 });
 
+// Matches "@Name" substrings against real user names rather than a generic
+// word-boundary regex, since display names can contain spaces (e.g.
+// "@Firman Fadila") that a \w-based mention regex would cut short.
+async function extractMentionedUserIds(body, excludeUserId) {
+  const { rows: users } = await pool.query('SELECT id, name FROM users');
+  const lowerBody = body.toLowerCase();
+  const matched = new Set();
+  users
+    .sort((a, b) => b.name.length - a.name.length)
+    .forEach(u => {
+      if (u.id === excludeUserId) return;
+      if (lowerBody.includes('@' + u.name.toLowerCase())) matched.add(u.id);
+    });
+  return [...matched];
+}
+
 router.post('/:id/comments', async (req, res) => {
   const { body } = req.body;
   if (!body || !body.trim()) return res.status(400).json({ data: null, error: 'body is required' });
@@ -76,10 +92,21 @@ router.post('/:id/comments', async (req, res) => {
        VALUES ($1,$2,$3) RETURNING *`,
       [req.params.id, req.user.id, body.trim()]
     );
+    const comment = rows[0];
+
+    const mentionedIds = await extractMentionedUserIds(comment.body, req.user.id);
+    for (const recipientId of mentionedIds) {
+      await pool.query(
+        `INSERT INTO notifications (recipient_id, actor_id, type, issue_id, comment_id)
+         VALUES ($1,$2,'issue_mention',$3,$4)`,
+        [recipientId, req.user.id, req.params.id, comment.id]
+      );
+    }
+
     const { rows: withAuthor } = await pool.query(
       `SELECT c.*, u.name AS author_name, ${ATTACHMENTS_SUBQUERY}
        FROM issue_comments c LEFT JOIN users u ON u.id=c.author WHERE c.id=$1`,
-      [rows[0].id]
+      [comment.id]
     );
     res.status(201).json({ data: withAuthor[0], error: null });
   } catch (err) {
