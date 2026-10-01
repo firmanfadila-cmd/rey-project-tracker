@@ -40,10 +40,20 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+const ATTACHMENTS_SUBQUERY = `
+  COALESCE((
+    SELECT json_agg(json_build_object(
+      'id', a.id, 'kind', a.kind, 'filename', a.filename,
+      'mime_type', a.mime_type, 'size_bytes', a.size_bytes,
+      'url', a.url, 'label', a.label, 'created_at', a.created_at
+    ) ORDER BY a.created_at ASC)
+    FROM issue_comment_attachments a WHERE a.comment_id = c.id
+  ), '[]'::json) AS attachments`;
+
 router.get('/:id/comments', async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT c.*, u.name AS author_name
+      `SELECT c.*, u.name AS author_name, ${ATTACHMENTS_SUBQUERY}
        FROM issue_comments c
        LEFT JOIN users u ON u.id = c.author
        WHERE c.issue_id=$1
@@ -67,7 +77,8 @@ router.post('/:id/comments', async (req, res) => {
       [req.params.id, req.user.id, body.trim()]
     );
     const { rows: withAuthor } = await pool.query(
-      `SELECT c.*, u.name AS author_name FROM issue_comments c LEFT JOIN users u ON u.id=c.author WHERE c.id=$1`,
+      `SELECT c.*, u.name AS author_name, ${ATTACHMENTS_SUBQUERY}
+       FROM issue_comments c LEFT JOIN users u ON u.id=c.author WHERE c.id=$1`,
       [rows[0].id]
     );
     res.status(201).json({ data: withAuthor[0], error: null });
