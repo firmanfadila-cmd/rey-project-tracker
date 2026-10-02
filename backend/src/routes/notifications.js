@@ -8,13 +8,14 @@ router.get('/', async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT n.id, n.type, n.read, n.created_at,
-        n.issue_id, i.title AS issue_title, i.project_id,
+        n.issue_id, i.title AS issue_title,
+        COALESCE(n.project_id, i.project_id) AS project_id,
         p.client AS project_client, p.project AS project_name,
         n.comment_id, c.body AS comment_body,
         u.name AS actor_name
        FROM notifications n
        LEFT JOIN issues i ON i.id = n.issue_id
-       LEFT JOIN projects p ON p.id = i.project_id
+       LEFT JOIN projects p ON p.id = COALESCE(n.project_id, i.project_id)
        LEFT JOIN issue_comments c ON c.id = n.comment_id
        LEFT JOIN users u ON u.id = n.actor_id
        WHERE n.recipient_id = $1

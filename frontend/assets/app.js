@@ -1733,11 +1733,16 @@ function renderNotificationsPanel() {
   if (!notifications.length) {
     html += `<div class="task-empty" style="padding:24px 16px">No notifications yet.</div>`;
   } else {
-    html += `<div class="notif-list">` + notifications.map((n, i) => `
+    html += `<div class="notif-list">` + notifications.map((n, i) => {
+      const text = n.type === 'project_pm_assigned'
+        ? `<strong>${esc(n.actor_name || 'Someone')}</strong> assigned you as PM on <strong>${esc(n.project_client || '')} — ${esc(n.project_name || '')}</strong>`
+        : `<strong>${esc(n.actor_name || 'Someone')}</strong> mentioned you in <strong>${esc(n.issue_title || 'an issue')}</strong>`;
+      return `
       <div class="notif-item ${n.read ? '' : 'unread'}" onclick="openNotificationFromPanel(${i})">
-        <div class="notif-item-text"><strong>${esc(n.actor_name || 'Someone')}</strong> mentioned you in <strong>${esc(n.issue_title || 'an issue')}</strong></div>
+        <div class="notif-item-text">${text}</div>
         <div class="notif-item-meta">${esc(n.project_client || '')} — ${esc(n.project_name || '')} · ${fmtFull(n.created_at ? n.created_at.slice(0,10) : null)}</div>
-      </div>`).join('') + `</div>`;
+      </div>`;
+    }).join('') + `</div>`;
   }
 
   el.innerHTML = html;
@@ -1761,11 +1766,11 @@ async function openNotificationFromPanel(i) {
   }
   notifPanelOpen = false;
   renderNotificationsPanel();
-  if (!n.project_id || !n.issue_id) return;
+  if (!n.project_id) return;
 
   if (!getProj(n.project_id)) await loadProjects();
   await showDetail(n.project_id);
-  openIssueModal(n.issue_id);
+  if (n.issue_id) openIssueModal(n.issue_id);
 }
 
 document.addEventListener('click', e => {

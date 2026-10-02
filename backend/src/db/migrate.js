@@ -23,6 +23,8 @@ async function migrate() {
   await pool.query(sql8);
   const sql9 = fs.readFileSync(path.join(__dirname, 'migrations/009_add_notifications.sql'), 'utf8');
   await pool.query(sql9);
+  const sql10 = fs.readFileSync(path.join(__dirname, 'migrations/010_add_pm_user_link.sql'), 'utf8');
+  await pool.query(sql10);
   console.log('Schema migrated.');
 
   const hash = await bcrypt.hash('Admin@Rey2026', 10);
